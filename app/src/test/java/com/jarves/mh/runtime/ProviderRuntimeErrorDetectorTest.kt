@@ -24,6 +24,6 @@ class ProviderRuntimeErrorDetectorTest {
 
     @Test
     fun ordinaryRuntimeOutputIsNotFatal() {
-        assertNull(ProviderRuntimeErrorDetector.detect("Claude Code connected"))
+        assertNull(ProviderRuntimeErrorDetector.detect("Agent runtime connected"))
     }
 }

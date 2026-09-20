@@ -34,31 +34,14 @@ class AgentRegistry(drivers: List<AgentDriver>) {
 
     init {
         require(byId.size == drivers.size) { "Duplicate agent id" }
-        require(AgentKind.entries.all { it.stableId in byId }) { "Every built-in agent must be registered" }
     }
 
     fun require(kind: AgentKind): AgentDriver =
         byId[kind.stableId] ?: error("Agent '${kind.stableId}' is not registered")
 
     companion object {
-        fun builtIns(
-            claude: RuntimeBridge,
-            deepSeek: RuntimeBridge,
-            antigravity: RuntimeBridge,
-        ) = AgentRegistry(
+        fun builtIns(deepSeek: RuntimeBridge) = AgentRegistry(
             listOf(
-                BuiltInAgentDriver(
-                    AgentKind.CLAUDE_CODE,
-                    claude,
-                    setOf(
-                        AgentCapability.API_KEY,
-                        AgentCapability.ACCOUNT_LOGIN,
-                        AgentCapability.PROVIDER_PICKER,
-                        AgentCapability.MODEL_PICKER,
-                        AgentCapability.RESUME,
-                        AgentCapability.INTERACTIVE_APPROVALS,
-                    ),
-                ),
                 BuiltInAgentDriver(
                     AgentKind.DEEPSEEK_HARNESS,
                     deepSeek,
@@ -68,16 +51,6 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.MODEL_PICKER,
                         AgentCapability.RESUME,
                         AgentCapability.INTERACTIVE_APPROVALS,
-                    ),
-                ),
-                BuiltInAgentDriver(
-                    AgentKind.ANTIGRAVITY,
-                    antigravity,
-                    setOf(
-                        AgentCapability.ACCOUNT_LOGIN,
-                        AgentCapability.MODEL_PICKER,
-                        AgentCapability.REASONING_EFFORT,
-                        AgentCapability.RESUME,
                     ),
                 ),
             ),

@@ -208,7 +208,7 @@ private fun LegacySettingsScreen(
                 ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text(
-                            "Node.js, npm, and Git are always installed — Claude Code runs on them.",
+                            "Node.js, npm, and Git are always installed — the agent runtime runs on them.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -750,7 +750,7 @@ private fun LegacySettingsScreen(
                             Text("v1.0.0", color = PocketOrange, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         }
                         Text(
-                            "Autonomous AI Developer with native on-device Linux PRoot sandbox and Claude Code integration.",
+                            "Autonomous AI Developer with a native on-device Linux PRoot sandbox.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp,

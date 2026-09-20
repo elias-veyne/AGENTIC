@@ -200,7 +200,6 @@ import com.jarves.mh.model.projectSlug
 import com.jarves.mh.runtime.RuntimeExecutionService
 import com.jarves.mh.runtime.RuntimeSetupService
 import com.jarves.mh.runtime.supportsArm64Runtime
-import com.jarves.mh.runtime.AntigravityAuthStatus
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -291,15 +290,6 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onToggleTheme = viewModel::toggleTheme,
             onRetry = viewModel::retryStartup,
         )
-        state.startupStage == StartupStage.MODEL_SETUP && state.agentKind == AgentKind.ANTIGRAVITY ->
-            AntigravityOnboardingScreen(
-                state = state,
-                onStartLogin = viewModel::startAntigravityLogin,
-                onSubmitCode = viewModel::submitAntigravityCode,
-                onContinue = viewModel::finishAntigravityOnboarding,
-                onSelectAgent = viewModel::chooseOnboardingAgent,
-                onToggleTheme = viewModel::toggleTheme,
-            )
         state.startupStage == StartupStage.MODEL_SETUP -> ProviderSetupScreen(
             initial = state.provider,
             onboarding = true,
@@ -362,118 +352,6 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AntigravityOnboardingScreen(
-    state: AppUiState,
-    onStartLogin: () -> Unit,
-    onSubmitCode: (String) -> Unit,
-    onContinue: () -> Unit,
-    onSelectAgent: (AgentKind) -> Unit,
-    onToggleTheme: () -> Unit,
-) {
-    val clipboard = LocalClipboardManager.current
-    var code by rememberSaveable { mutableStateOf("") }
-    var showAgentPicker by rememberSaveable { mutableStateOf(false) }
-    if (showAgentPicker) {
-        AgentSwitchSheet(
-            selected = AgentKind.ANTIGRAVITY,
-            onSelect = { agent ->
-                showAgentPicker = false
-                onSelectAgent(agent)
-            },
-            onDismiss = { showAgentPicker = false },
-        )
-    }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Set up Antigravity") },
-                actions = { IconButton(onClick = onToggleTheme) { Icon(Icons.Default.DarkMode, "Toggle theme") } },
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(24.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text("Connect your Google account", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "PocketDev runs Google's official agy CLI inside its private Linux environment. Google handles authentication and agy owns the saved session.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            when (state.antigravityAuth.status) {
-                AntigravityAuthStatus.SIGNED_OUT, AntigravityAuthStatus.ERROR -> {
-                    state.antigravityAuth.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(onClick = onStartLogin, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Text("Sign in with Google")
-                    }
-                }
-                AntigravityAuthStatus.STARTING -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text("Starting the official Antigravity login…")
-                }
-                AntigravityAuthStatus.COMPLETING -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text("Completing Google sign-in…")
-                }
-                AntigravityAuthStatus.AWAITING_CODE -> {
-                    Text("Google sign-in opened in your browser. Copy the one-time code shown after approval.")
-                    state.antigravityAuth.authorizationUrl?.let { url ->
-                        OutlinedButton(
-                            onClick = { clipboard.setText(AnnotatedString(url)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Copy sign-in URL")
-                        }
-                    }
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = { code = it },
-                        label = { Text("Authorization code") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        onClick = { onSubmitCode(code); code = "" },
-                        enabled = code.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Complete sign-in") }
-                }
-                AntigravityAuthStatus.SIGNED_IN -> {
-                    Surface(color = PocketGreen.copy(alpha = 0.12f), shape = RoundedCornerShape(14.dp)) {
-                        Text(
-                            state.antigravityAuth.accountEmail?.let { "Connected as $it" } ?: "Google account connected",
-                            Modifier.fillMaxWidth().padding(16.dp),
-                            color = PocketGreen,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Text("Continue")
-                    }
-                }
-            }
-            TextButton(
-                onClick = { showAgentPicker = true },
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            ) {
-                Text("Use another coding agent", fontSize = 12.sp)
-            }
-            Surface(color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f), shape = RoundedCornerShape(14.dp)) {
-                Text(
-                    "Automatic tool approval is enabled for Antigravity. It can edit project files and run commands without confirmation. Changes remain reviewable in PocketDev.",
-                    Modifier.fillMaxWidth().padding(14.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    fontSize = 12.sp,
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun BackgroundTaskSetupScreen(
     themeMode: AppThemeMode = AppThemeMode.DARK,
     onToggleTheme: () -> Unit = {},
@@ -527,7 +405,7 @@ private fun BackgroundTaskSetupScreen(
         else -> "Task protection"
     }
     val currentDescription = when (currentStep) {
-        0 -> "See live progress and receive an alert when Claude finishes or needs your attention."
+        0 -> "See live progress and receive an alert when the agent finishes or needs your attention."
         1 -> "Allow Mobile Harness to continue a task when you lock the phone or switch to another app."
         else -> "Keep the CPU awake only while a visible coding task is running, then release it automatically."
     }
@@ -787,7 +665,7 @@ private fun getDevStackVisuals(stack: DevStack): DevStackVisuals = when (stack) 
 @Composable
 private fun RuntimeSetupPromptScreen(
     selectedStacks: Set<DevStack>,
-    selectedAgent: AgentKind = AgentKind.CLAUDE_CODE,
+    selectedAgent: AgentKind = AgentKind.DEEPSEEK_HARNESS,
     themeMode: AppThemeMode = AppThemeMode.DARK,
     onToggleTheme: () -> Unit = {},
     onToggleStack: (DevStack) -> Unit,
@@ -1169,9 +1047,7 @@ private fun RuntimeSetupPromptScreen(
 }
 
 private const val CORE_RUNTIME_DOWNLOAD_MB = 69
-private const val CLAUDE_RUNTIME_DOWNLOAD_MB = 72
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
-private const val AGY_RUNTIME_DOWNLOAD_MB = 40
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
 private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
 
@@ -1208,11 +1084,7 @@ private fun stackDownloadLabel(stack: DevStack): String = when {
 private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind): String {
     if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return "All selected bundles are included in this offline app"
     val total = CORE_RUNTIME_DOWNLOAD_MB +
-        when (agent) {
-            AgentKind.CLAUDE_CODE -> CLAUDE_RUNTIME_DOWNLOAD_MB
-            AgentKind.DEEPSEEK_HARNESS -> DSH_RUNTIME_DOWNLOAD_MB
-            AgentKind.ANTIGRAVITY -> AGY_RUNTIME_DOWNLOAD_MB
-        } +
+        DSH_RUNTIME_DOWNLOAD_MB +
         (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0) +
         (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0)
     val laterPackages = selected.intersect(setOf(DevStack.CPP, DevStack.PHP))
@@ -1293,16 +1165,8 @@ private fun AgentChoiceRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val accent = when (agent) {
-        AgentKind.CLAUDE_CODE -> Color(0xFFD97757)
-        AgentKind.DEEPSEEK_HARNESS -> Color(0xFF4D6BFE)
-        AgentKind.ANTIGRAVITY -> Color(0xFF4285F4)
-    }
-    val mark = when (agent) {
-        AgentKind.CLAUDE_CODE -> "CC"
-        AgentKind.DEEPSEEK_HARNESS -> "DS"
-        AgentKind.ANTIGRAVITY -> "AG"
-    }
+    val accent = Color(0xFF4D6BFE)
+    val mark = "DS"
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2106,12 +1970,6 @@ private fun RootScreenHost(
                     onInstallAgent = viewModel::installAgent,
                     onCheckAgentUpdates = viewModel::checkAgentUpdates,
                     onUpdateAgent = viewModel::updateAgent,
-                    onStartAntigravityLogin = viewModel::startAntigravityLogin,
-                    onSubmitAntigravityCode = viewModel::submitAntigravityCode,
-                    onLogoutAntigravity = viewModel::logoutAntigravity,
-                    onRefreshAntigravityModels = viewModel::refreshAntigravityModels,
-                    onSetAntigravityModel = viewModel::setAntigravityModel,
-                    onSetAntigravityEffort = viewModel::setAntigravityEffort,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
@@ -2133,12 +1991,6 @@ private fun RootScreenHost(
                     onInstallAgent = viewModel::installAgent,
                     onCheckAgentUpdates = viewModel::checkAgentUpdates,
                     onUpdateAgent = viewModel::updateAgent,
-                    onStartAntigravityLogin = viewModel::startAntigravityLogin,
-                    onSubmitAntigravityCode = viewModel::submitAntigravityCode,
-                    onLogoutAntigravity = viewModel::logoutAntigravity,
-                    onRefreshAntigravityModels = viewModel::refreshAntigravityModels,
-                    onSetAntigravityModel = viewModel::setAntigravityModel,
-                    onSetAntigravityEffort = viewModel::setAntigravityEffort,
                     initialDebugUpdateManifestUrl = viewModel.debugUpdateManifestUrl(),
                     onSetDebugUpdateManifestUrl = viewModel::setDebugUpdateManifestUrl,
                     onClearDebugUpdateManifestUrl = viewModel::clearDebugUpdateManifestUrl,
@@ -2248,7 +2100,7 @@ private fun QuickTerminalSheet(
 private fun ProviderSetupScreen(
     initial: ProviderProfile,
     onboarding: Boolean,
-    agentKind: AgentKind = AgentKind.CLAUDE_CODE,
+    agentKind: AgentKind = AgentKind.DEEPSEEK_HARNESS,
     initialStep: Int = if (onboarding) 0 else 1,
     onBack: (() -> Unit)? = null,
     onSave: (ProviderProfile, String) -> Unit,
@@ -2570,7 +2422,6 @@ private fun ProviderChoiceRow(
     onClick: () -> Unit,
 ) {
     val accent = when (provider) {
-        ProviderKind.CLAUDE -> Color(0xFFD97757)
         ProviderKind.ANTHROPIC -> Color(0xFFE7A26D)
         ProviderKind.LLM_ROUTER -> Color(0xFF5B8DEF)
         ProviderKind.DEEPSEEK -> Color(0xFF4D6BFE)
@@ -2580,7 +2431,6 @@ private fun ProviderChoiceRow(
         ProviderKind.CUSTOM -> PocketOrange
     }
     val mark = when (provider) {
-        ProviderKind.CLAUDE -> "C"
         ProviderKind.ANTHROPIC -> "A"
         ProviderKind.LLM_ROUTER -> "OR"
         ProviderKind.DEEPSEEK -> "DS"
@@ -2661,7 +2511,7 @@ private fun ProviderChoiceRow(
 @Composable
 private fun ProviderCredentialsStep(
     provider: ProviderKind,
-    agentKind: AgentKind = AgentKind.CLAUDE_CODE,
+    agentKind: AgentKind = AgentKind.DEEPSEEK_HARNESS,
     baseUrl: String,
     model: String,
     dshApi: String = "anthropic-messages",
@@ -2692,17 +2542,6 @@ private fun ProviderCredentialsStep(
         if (query.isEmpty()) models else models.filter {
             it.id.contains(query, ignoreCase = true) || it.displayName.contains(query, ignoreCase = true)
         }
-    }
-
-    if (provider == ProviderKind.CLAUDE) {
-        ClaudeSubscriptionCredentialsStep(
-            token = apiKey,
-            hasStoredToken = hasStoredSecret,
-            onToken = onApiKey,
-            onSave = onSave,
-            onChangeAgent = onChangeAgent,
-        )
-        return
     }
 
     fun discoverModels(openWhenReady: Boolean = true) {
@@ -2835,11 +2674,7 @@ private fun ProviderCredentialsStep(
             Text(provider.title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(5.dp))
             Text(
-                when {
-                    agentKind == AgentKind.DEEPSEEK_HARNESS -> "DeepSeek Harness will connect through this API endpoint."
-                    provider.protocol.name.startsWith("OPENAI") -> "Mobile Harness will translate Claude Code requests for this provider."
-                    else -> "Claude Code will connect through this API endpoint."
-                },
+                "DeepSeek Harness will connect through this API endpoint.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -2929,7 +2764,7 @@ private fun ProviderCredentialsStep(
                     onClick = {
                         scope.launch {
                             isValidating = true
-                            status = "Checking API key, model, and Claude Code settings…"
+                            status = "Checking API key, model, and agent settings…"
                             statusDetails = null
                             statusOk = true
                             when (val result = onValidate(models)) {
@@ -2962,95 +2797,6 @@ private fun ProviderCredentialsStep(
                 onClick = onChangeAgent,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Use another coding agent", fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ClaudeSubscriptionCredentialsStep(
-    token: String,
-    hasStoredToken: Boolean,
-    onToken: (String) -> Unit,
-    onSave: () -> Unit,
-    onChangeAgent: () -> Unit,
-) {
-    var tokenVisible by rememberSaveable { mutableStateOf(false) }
-    val hasToken = token.isNotBlank() || hasStoredToken
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().imePadding(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("STEP 3 OF 3", color = PocketOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Spacer(Modifier.weight(1f))
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Key, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Encrypted locally", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Text("Claude subscription", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Connect a Claude Pro, Max, Team, or Enterprise subscription to Claude Code.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        item {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("1. On a computer where Claude Code is installed, run:", fontSize = 13.sp)
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp)) {
-                        Text(
-                            "claude setup-token",
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            fontFamily = FontFamily.Monospace,
-                            color = PocketOrange,
-                        )
-                    }
-                    Text("2. Sign in to Claude and paste the generated token here.", fontSize = 13.sp)
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = onToken,
-                        label = { Text("Claude setup token") },
-                        placeholder = { Text(if (hasStoredToken) "Saved securely — leave blank to keep it" else "Paste token") },
-                        supportingText = if (hasStoredToken && token.isBlank()) ({ Text("A saved subscription token is ready to use") }) else null,
-                        singleLine = true,
-                        visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        trailingIcon = {
-                            IconButton(onClick = { tokenVisible = !tokenVisible }) {
-                                Icon(if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Toggle token visibility")
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-        item {
-            Button(
-                onClick = onSave,
-                enabled = hasToken,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-            ) {
-                Text("Save and continue")
-            }
-        }
-        item {
-            TextButton(onClick = onChangeAgent, modifier = Modifier.fillMaxWidth()) {
                 Text("Use another coding agent", fontSize = 12.sp)
             }
         }
@@ -3578,8 +3324,6 @@ private fun ApiStatusChip(state: AppUiState, onSettings: () -> Unit, onPing: () 
         ApiPingStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     }
     val providerLabel = when {
-        state.agentKind == AgentKind.ANTIGRAVITY ->
-            state.antigravityModel.ifBlank { state.agentKind.title }
         state.provider.model.isNotBlank() -> state.provider.model
         state.provider.baseUrl.isNotBlank() -> {
             runCatching { java.net.URI(state.provider.baseUrl).host ?: state.provider.kind.title }
@@ -3981,7 +3725,7 @@ private fun WorkspaceScreen(
                             ),
                         )
                         Text(
-                            "${activeChat?.title ?: "Chat"} · ${if (state.agentKind == AgentKind.ANTIGRAVITY) state.agentKind.title else state.provider.kind.title}",
+                            "${activeChat?.title ?: "Chat"} · ${state.provider.kind.title}",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -4472,8 +4216,8 @@ private fun ChatTab(
                     }
                 }
                 if (liveProcess.isNotEmpty() || thinkingActive) {
-                    item(key = "live-claude-process") {
-                        LiveClaudeProcess(
+                    item(key = "live-agent-process") {
+                        LiveAgentProcess(
                             processItems = liveProcess,
                             isRunning = isRunning,
                             startedAtMillis = taskStartedAtMillis,
@@ -4689,7 +4433,7 @@ private fun ChatTab(
 }
 
 @Composable
-private fun LiveClaudeProcess(
+private fun LiveAgentProcess(
     processItems: List<ActivityItem>,
     isRunning: Boolean,
     startedAtMillis: Long?,
@@ -4697,7 +4441,7 @@ private fun LiveClaudeProcess(
     thinkingActive: Boolean,
 ) {
     val elapsedSeconds = startedAtMillis?.let { rememberLiveElapsedSeconds(it).toLong() } ?: 0L
-    ClaudeActivityDisclosure(
+    AgentActivityDisclosure(
         items = processItems,
         headline = activityHeadline(processItems, elapsedSeconds, thinkingActive),
         isRunning = isRunning,
@@ -4708,7 +4452,7 @@ private fun LiveClaudeProcess(
 private fun WorkBlockCard(message: ChatMessage) {
     val seconds = (message.workedMillis / 1_000L).coerceAtLeast(1L)
     Column {
-        ClaudeActivityDisclosure(
+        AgentActivityDisclosure(
             items = message.workItems,
             headline = activityHeadline(message.workItems, seconds, message.workItems.isEmpty()),
         )
@@ -4724,7 +4468,7 @@ private fun WorkBlockCard(message: ChatMessage) {
 }
 
 @Composable
-private fun ClaudeActivityDisclosure(
+private fun AgentActivityDisclosure(
     items: List<ActivityItem>,
     headline: String,
     isRunning: Boolean = false,

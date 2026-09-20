@@ -6,7 +6,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.random.Random
 
-enum class ProviderProtocol { CLAUDE_LOGIN, ANTHROPIC, ANTHROPIC_GATEWAY, OPENROUTER, OPENAI_RESPONSES, OPENAI_CHAT }
+enum class ProviderProtocol { ANTHROPIC, ANTHROPIC_GATEWAY, OPENROUTER, OPENAI_RESPONSES, OPENAI_CHAT }
 
 enum class ProviderKind(
     val title: String,
@@ -18,7 +18,6 @@ enum class ProviderKind(
     val fixedBaseUrl: Boolean = false,
     val fixedProtocol: Boolean = false,
 ) {
-    CLAUDE("Claude subscription", "Pro, Max, Team or Enterprise", ProviderProtocol.CLAUDE_LOGIN, "", "default"),
     ANTHROPIC("Anthropic API", "Usage billed through Console", ProviderProtocol.ANTHROPIC, "https://api.anthropic.com", "claude-sonnet-4-6"),
     LLM_ROUTER("OpenRouter", "Use your OpenRouter API key", ProviderProtocol.OPENROUTER, "https://openrouter.ai/api", "~anthropic/claude-sonnet-latest"),
     DEEPSEEK("DeepSeek", "Use your DeepSeek API key", ProviderProtocol.ANTHROPIC_GATEWAY, "https://api.deepseek.com/anthropic", "deepseek-v4-flash"),
@@ -46,7 +45,8 @@ enum class ProviderKind(
 
 /**
  * Coding agent engine installed in the private Linux runtime.
- * Each coding agent is installed independently on demand over the shared Core runtime.
+ * AGENTIC standardizes on DeepSeek Harness as its single coding agent engine,
+ * installed on demand over the shared Core runtime.
  */
 enum class AgentKind(
     val stableId: String,
@@ -54,34 +54,22 @@ enum class AgentKind(
     val subtitle: String,
     val downloadNote: String,
 ) {
-    CLAUDE_CODE(
-        "claude-code",
-        "Claude Code",
-        "Anthropic's coding agent · broad provider support",
-        "71.8 MB",
-    ),
     DEEPSEEK_HARNESS(
         "deepseek-harness",
         "DeepSeek Harness",
         "Official DeepSeek coding agent · API-key providers",
         "26.5 MB",
     ),
-    ANTIGRAVITY(
-        "antigravity",
-        "Antigravity CLI",
-        "Google's official coding agent · Google account",
-        "39.9 MB",
-    ),
     ;
 
     companion object {
         fun fromStored(value: String?): AgentKind = entries.firstOrNull {
             it.stableId == value || it.name == value
-        } ?: CLAUDE_CODE
+        } ?: DEEPSEEK_HARNESS
     }
 }
 
-/** Provider kinds usable with [AgentKind.DEEPSEEK_HARNESS]. Claude OAuth login has no dsh equivalent. */
+/** Provider kinds usable with DeepSeek Harness. */
 val DEEPSEEK_HARNESS_PROVIDERS: Set<ProviderKind> = setOf(
     ProviderKind.DEEPSEEK,
     ProviderKind.ANTHROPIC,
@@ -132,11 +120,9 @@ fun providerProtocolForAgent(profile: ProviderProfile, agent: AgentKind): Provid
     }
 }
 
-/** Provider choices shown for the selected coding agent. */
+/** Provider choices shown for the coding agent. */
 fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
-    AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
-    AgentKind.ANTIGRAVITY -> emptyList()
 }
 
 data class ProviderProfile(
@@ -226,8 +212,8 @@ enum class RiskLevel { SAFE, REVIEW, HIGH }
 
 /**
  * Optional development toolchains the user can pick during onboarding.
- * Node.js, npm, Git, and Claude Code itself are always installed because the
- * agent runtime depends on them; these stacks add heavier extras on demand.
+ * Node.js, npm, and Git are always installed because the agent runtime
+ * depends on them; these stacks add heavier extras on demand.
  */
 enum class DevStack(
     val label: String,

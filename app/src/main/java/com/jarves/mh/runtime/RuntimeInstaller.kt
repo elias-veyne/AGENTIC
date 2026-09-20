@@ -57,16 +57,12 @@ class RuntimeInstaller(private val context: Context) {
     private val rootfs = File(runtimeDir, "ubuntu")
     private val downloads = File(context.cacheDir, "runtime-downloads")
     private val coreReadyMarker = File(rootfs, ".pocket-runtime-ready")
-    private val claudeMarker = File(rootfs, ".pocket-claude-version")
-    // Read only for migration from Core bundles that embedded Claude Code.
-    private val bundledClaudeMarker = File(rootfs, ".pocket-bundled-claude-version")
     private val rootfsMarker = File(rootfs, ".pocket-rootfs-version")
     private val languageToolsMarker = File(rootfs, ".pocket-language-tools-version")
     private val coreToolsMarker = File(rootfs, ".pocket-core-tools-version")
     private val systemUpgradeMarker = File(rootfs, ".pocket-system-upgrade-version")
     private val devStacksFile = File(rootfs, ".pocket-dev-stacks.json")
     private val dshMarker = File(rootfs, ".pocket-dsh-version")
-    private val agyMarker = File(rootfs, ".pocket-agy-version")
     private val githubCliMarker = File(rootfs, ".pocket-github-cli-version")
     private val dshAndroidCompatibilityMarker = File(rootfs, ".pocket-dsh-android-compat-version")
     private val macosMetadataRepairMarker = File(rootfs, ".pocket-macos-metadata-repair")
@@ -119,16 +115,6 @@ class RuntimeInstaller(private val context: Context) {
         workspaces.listFiles { file -> file.isDirectory }.orEmpty().forEach { workspace ->
             File(workspace, "README.md").deleteIfExact(LEGACY_README)
             File(workspace, "index.html").deleteIfExact(LEGACY_INDEX)
-
-            listOf(
-                File(workspace, ".claude/settings.json"),
-                File(workspace, ".claude.json"),
-            ).forEach { settings ->
-                if (settings.isFile && settings.readTextOrNull()?.contains("/opt/pocket/permission-hook.sh") == true) {
-                    settings.delete()
-                }
-            }
-            File(workspace, ".claude").takeIf { it.isDirectory && it.list().isNullOrEmpty() }?.delete()
         }
     }
 
@@ -138,7 +124,7 @@ class RuntimeInstaller(private val context: Context) {
 
     suspend fun ensureInstalled(
         selectedStacks: Set<DevStack> = emptySet(),
-        agent: com.jarves.mh.model.AgentKind = com.jarves.mh.model.AgentKind.CLAUDE_CODE,
+        agent: com.jarves.mh.model.AgentKind = com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ): InstalledRuntime {
         require(
@@ -175,9 +161,6 @@ class RuntimeInstaller(private val context: Context) {
 
         check(ensureRootfsCompatibilityLinks()) { "Core runtime has an invalid Linux filesystem layout" }
 
-        migrateLegacyClaudeMarker()
-        ensureSettingsAndHooks()
-
         // Node.js and Git are always available in the Core runtime. Python,
         // C/C++, PHP, and Android remain opt-in stacks during onboarding.
         val coreNeeded = !File(rootfs, "usr/bin/git").exists() || !isSupportedCoreToolsVersion()
@@ -208,18 +191,14 @@ class RuntimeInstaller(private val context: Context) {
             applyStack(proot, stack, from, from + slice, onProgress)
         }
 
-        when (agent) {
-            com.jarves.mh.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(proot, 0.985f, onProgress)
-            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
-            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
-        }
+        ensureDshInstalled(proot, 0.985f, onProgress)
         onProgress(RuntimeInstallProgress("Setup complete", 1f))
         return InstalledRuntime(proot, rootfs)
     }
 
     /**
-     * Installs one coding agent on demand. Safe to call again: an already-installed
-     * agent returns immediately without network access. Every coding agent is a
+     * Installs the coding agent on demand. Safe to call again: an already-installed
+     * agent returns immediately without network access. The agent is a
      * separate overlay and is fetched or loaded only when selected.
      */
     suspend fun ensureAgentInstalled(
@@ -227,40 +206,19 @@ class RuntimeInstaller(private val context: Context) {
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         val runtime = installedRuntime()
-        when (agent) {
-            com.jarves.mh.model.AgentKind.CLAUDE_CODE -> ensureClaudeInstalled(runtime.proot, 0.05f, onProgress)
-            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(runtime.proot, 0.05f, onProgress)
-            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(runtime.proot, 0.05f, onProgress)
-        }
+        ensureDshInstalled(runtime.proot, 0.05f, onProgress)
         onProgress(RuntimeInstallProgress("${agent.title} is ready", 1f))
     }
 
     fun isAgentInstalled(agent: com.jarves.mh.model.AgentKind): Boolean {
-        return when (agent) {
-            com.jarves.mh.model.AgentKind.CLAUDE_CODE -> {
-                migrateLegacyClaudeMarker()
-                isInstalled() && File(rootfs, CLAUDE_GUEST_PATH.removePrefix("/")).canExecute() &&
-                    !claudeMarker.readTextOrNull().isNullOrBlank()
-            }
-            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> isInstalled() &&
-                // /usr/local/bin/dsh is an absolute guest symlink. File.exists() follows it
-                // against Android's host root and therefore reports false outside PRoot.
-                File(rootfs, "usr/local/lib/dsh/node_modules/.bin/dsh").isFile &&
-                !dshMarker.readTextOrNull().isNullOrBlank()
-            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> isInstalled() &&
-                File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() &&
-                !agyMarker.readTextOrNull().isNullOrBlank()
-        }
+        return isInstalled() &&
+            // /usr/local/bin/dsh is an absolute guest symlink. File.exists() follows it
+            // against Android's host root and therefore reports false outside PRoot.
+            File(rootfs, "usr/local/lib/dsh/node_modules/.bin/dsh").isFile &&
+            !dshMarker.readTextOrNull().isNullOrBlank()
     }
 
     val dshVersion: String get() = dshMarker.readTextOrNull().orEmpty()
-
-    val claudeVersion: String get() {
-        migrateLegacyClaudeMarker()
-        return claudeMarker.readTextOrNull().orEmpty()
-    }
-
-    val agyVersion: String get() = agyMarker.readTextOrNull().orEmpty()
 
     val githubCliVersion: String get() = githubCliMarker.readTextOrNull().orEmpty()
 
@@ -317,51 +275,27 @@ class RuntimeInstaller(private val context: Context) {
     }
 
     /**
-     * Versions recorded after each real agent binary has been installed and verified.
+     * Versions recorded after the agent binary has been installed and verified.
      * This intentionally reports what is present in PRoot, even when a newer app build
      * would subsequently offer an agent update.
      */
     fun installedAgentVersions(): Map<com.jarves.mh.model.AgentKind, String> = buildMap {
-        migrateLegacyClaudeMarker()
-        claudeMarker.readTextOrNull()
-            ?.trim()
-            ?.takeIf { isAgentInstalled(com.jarves.mh.model.AgentKind.CLAUDE_CODE) && it.matches(CLAUDE_VERSION_PATTERN) }
-            ?.let { put(com.jarves.mh.model.AgentKind.CLAUDE_CODE, it) }
-
         dshMarker.readTextOrNull()
             ?.trim()
             ?.takeIf { it.isNotEmpty() && File(rootfs, "usr/local/lib/dsh/node_modules/.bin/dsh").isFile }
             ?.let { put(com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS, it) }
-
-        agyMarker.readTextOrNull()
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() && File(rootfs, AGY_GUEST_PATH.removePrefix("/")).canExecute() }
-            ?.let { put(com.jarves.mh.model.AgentKind.ANTIGRAVITY, it) }
     }
 
-    /** Checks each installed agent against its own authoritative release source. */
+    /** Checks the installed agent against its authoritative release source. */
     suspend fun checkAgentUpdates(): Map<com.jarves.mh.model.AgentKind, AgentUpdateInfo> {
         val installed = installedAgentVersions()
         return buildMap {
-            installed[com.jarves.mh.model.AgentKind.CLAUDE_CODE]?.let { current ->
-                runCatching {
-                    JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version")
-                }.getOrNull()?.takeIf { isVersionNewer(it, current) }?.let { latest ->
-                    put(com.jarves.mh.model.AgentKind.CLAUDE_CODE, AgentUpdateInfo(current, latest))
-                }
-            }
             installed[com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS]?.let { current ->
                 runCatching {
                     JSONObject(fetchText("https://registry.npmjs.org/@deepseek-ai/dsh/latest")).getString("version")
                 }.getOrNull()?.takeIf { isVersionNewer(it, current) }?.let { latest ->
                     put(com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS, AgentUpdateInfo(current, latest))
                 }
-            }
-            installed[com.jarves.mh.model.AgentKind.ANTIGRAVITY]?.let { current ->
-                runCatching { fetchAgyManifest().getString("version") }.getOrNull()
-                    ?.takeIf { isVersionNewer(it, current) }?.let { latest ->
-                        put(com.jarves.mh.model.AgentKind.ANTIGRAVITY, AgentUpdateInfo(current, latest))
-                    }
             }
         }
     }
@@ -372,73 +306,8 @@ class RuntimeInstaller(private val context: Context) {
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
         val runtime = installedRuntime()
-        when (agent) {
-            com.jarves.mh.model.AgentKind.CLAUDE_CODE -> updateClaude(runtime, expectedVersion, onProgress)
-            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> updateDsh(runtime, expectedVersion, onProgress)
-            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> updateAgy(runtime, expectedVersion, onProgress)
-        }
+        updateDsh(runtime, expectedVersion, onProgress)
         onProgress(RuntimeInstallProgress("${agent.title} $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
-    }
-
-    private suspend fun updateClaude(
-        runtime: InstalledRuntime,
-        expectedVersion: String,
-        onProgress: suspend (RuntimeInstallProgress) -> Unit,
-    ) {
-        val latest = JSONObject(fetchText("https://registry.npmjs.org/@anthropic-ai/claude-code/latest")).getString("version")
-        check(latest == expectedVersion) { "A newer Claude Code release appeared. Check again before updating." }
-        val base = "https://downloads.claude.ai/claude-code-releases/$latest"
-        val manifest = JSONObject(fetchText("$base/manifest.json"))
-        val checksum = manifest.getJSONObject("platforms").getJSONObject("linux-arm64").getString("checksum")
-        val downloaded = File(downloads, "claude-$latest")
-        downloadVerified("$base/linux-arm64/claude", downloaded, checksum) { bytes, total ->
-            val ratio = if (total > 0L) bytes.toFloat() / total else 0f
-            onProgress(RuntimeInstallProgress("Downloading Claude Code $latest", ratio * 0.9f, bytes, total.takeIf { it > 0L }, event = RuntimeInstallEvent.DOWNLOAD))
-        }
-        val claude = File(rootfs, CLAUDE_GUEST_PATH.removePrefix("/"))
-        claude.parentFile?.mkdirs()
-        val staged = File(claude.parentFile, ".claude-$latest.installing")
-        downloaded.copyTo(staged, overwrite = true)
-        Os.chmod(staged.absolutePath, 0b111101101)
-        Os.rename(staged.absolutePath, claude.absolutePath)
-        downloaded.delete()
-        verifyGuest(runtime.proot, "$CLAUDE_GUEST_PATH --version", "Claude Code update verification failed")
-        claudeMarker.writeText(latest)
-    }
-
-    private suspend fun updateAgy(
-        runtime: InstalledRuntime,
-        expectedVersion: String,
-        onProgress: suspend (RuntimeInstallProgress) -> Unit,
-    ) {
-        val manifest = fetchAgyManifest()
-        val latest = manifest.getString("version")
-        check(latest == expectedVersion) { "A newer Antigravity release appeared. Check again before updating." }
-        val downloaded = File(downloads, "antigravity-$latest-linux-arm64.tar.gz")
-        downloadVerified(manifest.getString("url"), downloaded, manifest.getString("sha512"), algorithm = "SHA-512") { bytes, total ->
-            val ratio = if (total > 0L) bytes.toFloat() / total else 0f
-            onProgress(RuntimeInstallProgress("Downloading Antigravity CLI $latest", ratio * 0.9f, bytes, total.takeIf { it > 0L }, event = RuntimeInstallEvent.DOWNLOAD))
-        }
-        val destination = File(rootfs, AGY_GUEST_PATH.removePrefix("/"))
-        var found = false
-        TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(downloaded.inputStream()))).use { archive ->
-            var entry = archive.nextEntry
-            while (entry != null) {
-                if (entry.isFile && entry.name.removePrefix("./") == "antigravity") {
-                    val staged = File(destination.parentFile, ".agy-$latest.installing")
-                    FileOutputStream(staged).use { archive.copyTo(it) }
-                    Os.chmod(staged.absolutePath, 0b111101101)
-                    Os.rename(staged.absolutePath, destination.absolutePath)
-                    found = true
-                    break
-                }
-                entry = archive.nextEntry
-            }
-        }
-        downloaded.delete()
-        check(found) { "Antigravity update archive is incomplete" }
-        verifyGuest(runtime.proot, "$AGY_GUEST_PATH --version", "Antigravity update verification failed")
-        agyMarker.writeText(latest)
     }
 
     private suspend fun updateDsh(
@@ -471,10 +340,6 @@ class RuntimeInstaller(private val context: Context) {
         verifyGuest(runtime.proot, "/usr/local/bin/dsh --profile headless --help", "DeepSeek Harness update verification failed")
     }
 
-    private fun fetchAgyManifest(): JSONObject = JSONObject(
-        fetchText("https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json"),
-    )
-
     private fun isVersionNewer(candidate: String, current: String): Boolean {
         fun parts(value: String) = Regex("\\d+").findAll(value).map { it.value.toIntOrNull() ?: 0 }.toList()
         val left = parts(candidate)
@@ -486,67 +351,10 @@ class RuntimeInstaller(private val context: Context) {
         return candidate != current && !candidate.contains("alpha", true) && !candidate.contains("rc", true)
     }
 
-    /**
-     * Older Core bundles stored Claude Code and its version in Core-owned markers.
-     * Preserve that verified installation when upgrading the app, while all fresh
-     * installs use the independent Claude overlay and marker.
-     */
-    private fun migrateLegacyClaudeMarker() {
-        if (claudeMarker.isFile) return
-        val claude = File(rootfs, CLAUDE_GUEST_PATH.removePrefix("/"))
-        if (!claude.isFile) return
-        val legacyVersion = sequenceOf(
-            coreReadyMarker.readTextOrNull(),
-            bundledClaudeMarker.readTextOrNull(),
-        ).mapNotNull { it?.trim() }.firstOrNull { it.matches(CLAUDE_VERSION_PATTERN) } ?: return
-        claudeMarker.writeText(legacyVersion)
-    }
-
     private fun isSupportedCoreToolsVersion(): Boolean = coreToolsMarker.readTextOrNull() in setOf(
         CORE_TOOLS_VERSION,
         LEGACY_CORE_TOOLS_VERSION,
     )
-
-    private suspend fun ensureClaudeInstalled(
-        proot: File,
-        fraction: Float,
-        onProgress: suspend (RuntimeInstallProgress) -> Unit,
-    ) {
-        migrateLegacyClaudeMarker()
-        if (isAgentInstalled(com.jarves.mh.model.AgentKind.CLAUDE_CODE)) return
-        installRuntimeOverlay(
-            bundle = CLAUDE_BUNDLE,
-            message = "Installing Claude Code $CLAUDE_BUNDLED_VERSION",
-            from = fraction,
-            to = 0.995f,
-            onProgress = onProgress,
-        )
-        verifyGuest(proot, "$CLAUDE_GUEST_PATH --version", "Claude Code verification failed")
-        require(claudeMarker.readTextOrNull() == CLAUDE_BUNDLED_VERSION) {
-            "The Claude Code runtime bundle is incomplete"
-        }
-    }
-
-    private suspend fun ensureAgyInstalled(
-        proot: File,
-        fraction: Float,
-        onProgress: suspend (RuntimeInstallProgress) -> Unit,
-    ) {
-        if (isAgentInstalled(com.jarves.mh.model.AgentKind.ANTIGRAVITY)) return
-        installRuntimeOverlay(
-            bundle = AGY_BUNDLE,
-            message = "Installing Antigravity CLI $AGY_VERSION",
-            from = fraction,
-            to = 0.995f,
-            onProgress = onProgress,
-            forceEmbedded = true,
-        )
-        verifyGuest(proot, "$AGY_GUEST_PATH --version", "Antigravity CLI verification failed")
-        agyMarker.writeText(AGY_VERSION)
-        require(isAgentInstalled(com.jarves.mh.model.AgentKind.ANTIGRAVITY)) {
-            "Antigravity CLI installation is incomplete"
-        }
-    }
 
     private suspend fun ensureDshInstalled(
         proot: File,
@@ -1432,7 +1240,6 @@ class RuntimeInstaller(private val context: Context) {
         val installed = installedRuntime()
         onProgress(RuntimeInstallProgress("Checking private runtime files", 0.15f))
         writeResolver()
-        ensureSettingsAndHooks()
         File(context.filesDir, "runtime-bridge").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
         onProgress(RuntimeInstallProgress("Preparing the Android runtime bridge", 0.42f))
         check(File(rootfs, "usr/local/bin/node").canExecute()) { "Core runtime is missing Node.js" }
@@ -1464,7 +1271,6 @@ class RuntimeInstaller(private val context: Context) {
         // Self-heal devices whose Android tools were installed by an older app
         // version before the global AAPT2 override was persisted.
         writeAndroidGradleConfiguration(rootfs)
-        ensureWorkspaceTrust(guestWorkspacePath)
         val bridge = File(context.filesDir, "runtime-bridge").apply { mkdirs() }
         val args = buildList {
             add(proot.absolutePath)
@@ -1518,7 +1324,7 @@ class RuntimeInstaller(private val context: Context) {
                 put("PROOT_NO_SECCOMP", "1")
                 put("PROOT_TMP_DIR", prootTemp.absolutePath)
                 put("PROOT_LOADER", File(context.applicationInfo.nativeLibraryDir, "libprootloader.so").absolutePath)
-                // Also protects any glibc helper Claude starts later.
+                // Also protects any glibc helper the agent starts later.
                 put("GLIBC_TUNABLES", "glibc.pthread.rseq=0")
                 putAll(environment)
             },
@@ -1528,80 +1334,6 @@ class RuntimeInstaller(private val context: Context) {
             ptyRows = ptyRows,
             ptyColumns = ptyColumns,
         )
-    }
-
-    fun ensureSettingsAndHooks() {
-        val hook = File(rootfs, "opt/pocket/permission-hook.sh")
-        hook.parentFile?.mkdirs()
-        hook.writeText(
-            """#!/bin/sh
-cat > /dev/null
-printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
-""",
-        )
-        Os.chmod(hook.absolutePath, 0b111101101)
-
-        val settingsContent = JSONObject()
-            .put("disableAllHooks", false)
-            .put(
-                "permissions",
-                JSONObject()
-                    .put("allow", claudeWorkspaceToolRules())
-                    .put("defaultMode", "acceptEdits"),
-            )
-            .put(
-                "hooks",
-                JSONObject().put(
-                    "PermissionRequest",
-                    org.json.JSONArray().put(
-                        JSONObject()
-                            .put("matcher", "Bash|Edit|Write|NotebookEdit")
-                            .put(
-                                "hooks",
-                                org.json.JSONArray().put(
-                                    JSONObject().put("type", "command").put("command", "/opt/pocket/permission-hook.sh"),
-                                ),
-                            ),
-                    ),
-                ),
-            )
-            .toString()
-
-        val settingsPaths = listOf(
-            File(rootfs, "root/.claude/pocket-settings.json"),
-            File(rootfs, "root/.claude/settings.json"),
-            File(rootfs, "etc/claude/settings.json"),
-        )
-        for (target in settingsPaths) {
-            target.parentFile?.mkdirs()
-            target.writeText(settingsContent)
-        }
-        ensureWorkspaceTrust("/workspace")
-    }
-
-    private fun ensureWorkspaceTrust(workspacePath: String) {
-        val stateFile = File(rootfs, "root/.claude.json")
-        val state = runCatching { JSONObject(stateFile.readText()) }.getOrElse { JSONObject() }
-        // Older alpha builds incorrectly wrote settings into Claude's state file.
-        // Keep Claude's generated state, but remove only those stale settings keys.
-        listOf("disableAllHooks", "permissions", "hooks", "allowedTools", "autoApprove")
-            .forEach(state::remove)
-        val projects = state.optJSONObject("projects") ?: JSONObject()
-        val workspace = projects.optJSONObject(workspacePath) ?: JSONObject()
-        workspace.put("hasTrustDialogAccepted", true)
-        projects.put(workspacePath, workspace)
-        state.put("projects", projects)
-        stateFile.writeText(state.toString())
-    }
-
-    private fun claudeWorkspaceToolRules() = org.json.JSONArray().apply {
-        put("Bash")
-        put("Edit")
-        put("Write")
-        put("NotebookEdit")
-        put("Read")
-        put("Glob")
-        put("Grep")
     }
 
     private fun writeResolver() {
@@ -1821,11 +1553,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
     private fun File.readTextOrNull(): String? = runCatching { readText().trim() }.getOrNull()
 
     companion object {
-        const val AGY_GUEST_PATH = "/root/.local/bin/agy"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
-        private const val AGY_VERSION = "1.1.27"
-        private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
-        private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
         private const val GITHUB_CLI_VERSION = "2.100.0"
         private const val GITHUB_CLI_RELEASE_URL = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz"
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
@@ -1851,7 +1579,6 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         private const val ANDROID_AAPT2_PROPERTY = "android.aapt2FromMavenOverride"
         private const val ANDROID_AAPT2_GUEST_PATH = "/root/android-sdk/build-tools/35.0.0/aapt2"
         private const val ANDROID_AAPT2_HOST_PATH = "root/android-sdk/build-tools/35.0.0/aapt2"
-        private val CLAUDE_VERSION_PATTERN = Regex("[0-9]+\\.[0-9]+\\.[0-9]+")
         /** Pinned DeepSeek Harness release installed via npm inside the guest (verified 2026-09-06). */
         const val DSH_VERSION = "0.1.2-rc.1"
         private const val DSH_ANDROID_COMPATIBILITY_VERSION = "copyfile-excl-v1"
@@ -1860,14 +1587,6 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             fileName = "pocketdev-core-arm64-2026.09.5.tar.zst",
             sha256 = "df0cf7251c74f82d424231e3804114a4ca66b16130eea9abab11e220dc7ac012",
             compressedBytes = 72_185_773L,
-        )
-        private const val CLAUDE_BUNDLED_VERSION = "2.1.263"
-        private const val CLAUDE_GUEST_PATH = "/usr/local/bin/claude"
-        private val CLAUDE_BUNDLE = RuntimeBundle(
-            label = "Claude Code",
-            fileName = "pocketdev-claude-arm64-2026.09.1.tar.zst",
-            sha256 = "0f68e15630e8c0fc941afe3f61ab5a3eb4407b334018de6dbdabfa5eca627724",
-            compressedBytes = 75_289_800L,
         )
         private val PYTHON_BUNDLE = RuntimeBundle(
             label = "Python",
@@ -1886,12 +1605,6 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
             fileName = "pocketdev-dsh-arm64-2026.09.1.tar.zst",
             sha256 = "88e6a23ba74e1cd74a2c923b7e0d6bd78ba4b7e5f8a9b649f12bf4ffe158cce5",
             compressedBytes = 27_752_194L,
-        )
-        private val AGY_BUNDLE = RuntimeBundle(
-            label = "Antigravity CLI",
-            fileName = "pocketdev-agy-arm64-2026.09.1.tar.zst",
-            sha256 = "a659ab9188956fc4721ca86fb21b5118e0e489f47a5e02ae6b4f2fb423659d78",
-            compressedBytes = 41_870_025L,
         )
         private const val MAX_TERMINAL_LINE = 500
         private const val MAX_COLLECTED_OUTPUT = 24_000

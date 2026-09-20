@@ -36,14 +36,9 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.ProviderApiClient
 import com.jarves.mh.network.GitHubRepository
-import com.jarves.mh.runtime.ClaudeRuntimeBridge
 import com.jarves.mh.runtime.DshRuntimeBridge
 import com.jarves.mh.runtime.AgentRegistry
 import com.jarves.mh.runtime.AgentUpdateInfo
-import com.jarves.mh.runtime.AntigravityAuthController
-import com.jarves.mh.runtime.AntigravityAuthState
-import com.jarves.mh.runtime.AntigravityAuthStatus
-import com.jarves.mh.runtime.AntigravityRuntimeBridge
 import com.jarves.mh.runtime.NativeSpawnProcess
 import com.jarves.mh.runtime.RuntimeInstallProgress
 import com.jarves.mh.runtime.RuntimeInstaller
@@ -94,16 +89,6 @@ private val ANSI_TERMINAL_SEQUENCE = Regex("\\u001B(?:\\][^\\u0007]*(?:\\u0007|\
 internal fun sanitizeTerminalOutput(text: String): String = text
     .replace(ANSI_TERMINAL_SEQUENCE, "")
     .filter { it == '\n' || it == '\r' || it == '\t' || it.code >= 0x20 }
-
-private val ANTIGRAVITY_MODEL_EFFORT = Regex("^(.*)-(low|medium|high)$")
-
-private fun antigravityEffortFromModel(model: String): String? =
-    ANTIGRAVITY_MODEL_EFFORT.matchEntire(model)?.groupValues?.get(2)
-
-private fun antigravityModelWithEffort(model: String, effort: String): String? {
-    val match = ANTIGRAVITY_MODEL_EFFORT.matchEntire(model) ?: return null
-    return "${match.groupValues[1]}-$effort"
-}
 
 private data class ProjectTerminalSnapshot(
     val lines: List<TerminalOutputLine> = emptyList(),
@@ -213,8 +198,8 @@ data class AppUiState(
     val devStackProgress: Float = 0f,
     val devStackBytes: Pair<Long, Long>? = null,
     val devStackBytesPerSecond: Long? = null,
-    val agentKind: AgentKind = AgentKind.CLAUDE_CODE,
-    val primaryAgentKind: AgentKind = AgentKind.CLAUDE_CODE,
+    val agentKind: AgentKind = AgentKind.DEEPSEEK_HARNESS,
+    val primaryAgentKind: AgentKind = AgentKind.DEEPSEEK_HARNESS,
     val installedAgentVersions: Map<AgentKind, String> = emptyMap(),
     val agentInstalling: AgentKind? = null,
     val agentMessage: String? = null,
@@ -230,11 +215,6 @@ data class AppUiState(
     val agentUpdateDownloadedBytes: Long? = null,
     val agentUpdateTotalBytes: Long? = null,
     val agentUpdateBytesPerSecond: Long? = null,
-    val antigravityAuth: AntigravityAuthState = AntigravityAuthState(),
-    val antigravityModel: String = "",
-    val antigravityEffort: String = "high",
-    val antigravityModels: List<String> = emptyList(),
-    val antigravityModelsLoading: Boolean = false,
     val androidBuildRunning: Boolean = false,
     val androidBuildMessage: String? = null,
     val appUpdate: AppUpdateInfo? = null,
@@ -247,21 +227,9 @@ data class AppUiState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
-    private val claudeRuntime = ClaudeRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
-    private val antigravityRuntime = AntigravityRuntimeBridge(
-        application,
-        model = { _state.value.antigravityModel },
-        effort = { _state.value.antigravityEffort },
-        conversationId = { projectId ->
-            _state.value.activeChatId?.let { preferences.loadAgentConversation(AgentKind.ANTIGRAVITY, projectId, it) }
-        },
-        saveConversationId = { projectId, id ->
-            _state.value.activeChatId?.let { preferences.saveAgentConversation(AgentKind.ANTIGRAVITY, projectId, it, id) }
-        },
-    )
-    private val agentRegistry = AgentRegistry.builtIns(claudeRuntime, dshRuntime, antigravityRuntime)
+    private val agentRegistry = AgentRegistry.builtIns(dshRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
     private fun appUpdater(): AppUpdater = AppUpdater(
@@ -275,7 +243,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var setupCompletionHandled: Boolean = false
     @Volatile private var githubAuthProcess: Process? = null
     private var githubAuthJob: kotlinx.coroutines.Job? = null
-    @Volatile private var lastOpenedAntigravityAuthUrl: String? = null
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
     private val failedApiKeyIds = mutableSetOf<String>()
     private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
@@ -284,15 +251,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .takeIf(String::isNotBlank)
         ?.let(AgentKind::fromStored)
         ?: initialAgentKind
-    private val antigravityAuthController = AntigravityAuthController(
-        application,
-        preferences.antigravitySignedIn,
-        preferences.antigravityAccountEmail,
-    ) { signedIn, email ->
-        preferences.antigravitySignedIn = signedIn
-        preferences.antigravityAccountEmail = email.orEmpty()
-        if (!signedIn) preferences.clearAgentConversations(AgentKind.ANTIGRAVITY)
-    }
     private val _state = MutableStateFlow(
         AppUiState(
             onboardingComplete = preferences.onboardingComplete,
@@ -302,13 +260,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             provider = preferences.loadProvider(vault, initialAgentKind),
             activeApiKeyName = vault.list(preferences.loadProvider(vault, initialAgentKind).kind.name)
                 .firstOrNull(ApiKeyInfo::isActive)?.name,
-            antigravityAuth = AntigravityAuthState(
-                status = if (preferences.antigravitySignedIn) AntigravityAuthStatus.SIGNED_IN else AntigravityAuthStatus.SIGNED_OUT,
-                message = preferences.antigravityAccountEmail.takeIf(String::isNotBlank)?.let { "Connected as $it" },
-                accountEmail = preferences.antigravityAccountEmail.takeIf(String::isNotBlank),
-            ),
-            antigravityModel = preferences.antigravityModel,
-            antigravityEffort = preferences.antigravityEffort,
             themeMode = runCatching { com.jarves.mh.ui.theme.AppThemeMode.valueOf(preferences.themeMode.uppercase()) }
                 .getOrDefault(com.jarves.mh.ui.theme.AppThemeMode.DARK),
             projects = preferences.loadProjects(),
@@ -332,27 +283,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch { dshRuntime.events.collect(::onRuntimeEvent) }
-        viewModelScope.launch { antigravityRuntime.events.collect(::onRuntimeEvent) }
-        viewModelScope.launch {
-            antigravityAuthController.state.collect { auth ->
-                _state.update { it.copy(antigravityAuth = auth) }
-                auth.authorizationUrl?.takeIf { it != lastOpenedAntigravityAuthUrl }?.let { url ->
-                    lastOpenedAntigravityAuthUrl = url
-                    runCatching {
-                        getApplication<Application>().startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    }.onFailure {
-                        _state.update { state -> state.copy(toastMessage = "Could not open the browser. Copy the sign-in URL instead.") }
-                    }
-                }
-            }
-        }
-        if (antigravityAuthController.hasOfficialCredential() &&
-            (!preferences.antigravitySignedIn || preferences.antigravityAccountEmail.isBlank())
-        ) {
-            viewModelScope.launch { antigravityAuthController.beginLogin() }
-        }
         if (!preferences.legacySeededCredentialRemoved) {
             vault.remove(ProviderKind.CUSTOM.name)
             preferences.legacySeededCredentialRemoved = true
@@ -386,7 +316,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val workspaceDir = File(application.filesDir, "workspaces/${project.id}")
                 val userFiles = if (workspaceDir.isDirectory) {
                     workspaceDir.walkTopDown().filter { file ->
-                        file.isFile && !file.name.startsWith(".claude") && file.name != ".pocket-dev-stacks.json"
+                        file.isFile && !file.name.startsWith(".dsh") && file.name != ".pocket-dev-stacks.json"
                     }.count()
                 } else 0
                 val keep = userMessages > 0 || userFiles > 0
@@ -854,7 +784,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (_state.value.isRunning) {
-            _state.update { it.copy(toastMessage = "Wait for Claude to finish creating the project before building.") }
+            _state.update { it.copy(toastMessage = "Wait for the agent to finish creating the project before building.") }
             return
         }
         if (_state.value.projectTerminalRunning) {
@@ -866,7 +796,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val installed = installer.installedRuntime()
                 val workspace = findAndroidGradleProjectRoot(projectWorkspaceRoot(project))
-                    ?: error("No Android Gradle project found yet. Ask Claude to create it, then wait for the task to finish.")
+                    ?: error("No Android Gradle project found yet. Ask the agent to create it, then wait for the task to finish.")
                 val process = installer.process(
                     installed.proot, installed.rootfs, workspace, emptyMap(),
                     listOf(
@@ -971,16 +901,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Keeps both agent bridges mapped to the same workspace root; the active one is used. */
+    /** Keeps the agent bridge mapped to the workspace root. */
     private fun configureBridgeRoots(projectId: String, rootPath: String) {
-        claudeRuntime.configureProjectRoot(projectId, rootPath)
         dshRuntime.configureProjectRoot(projectId, rootPath)
-        antigravityRuntime.configureProjectRoot(projectId, rootPath)
     }
 
     init {
         viewModelScope.launch { RuntimeSetupController.snapshot.collect(::onSetupSnapshot) }
-        viewModelScope.launch { claudeRuntime.events.collect(::onRuntimeEvent) }
         viewModelScope.launch { bootstrap() }
     }
 
@@ -1161,7 +1088,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pingApi()
             checkForAppUpdate()
         } else {
-            showStartupError(result.exceptionOrNull() ?: IllegalStateException("Claude Code initialization failed"))
+            showStartupError(result.exceptionOrNull() ?: IllegalStateException("Agent runtime initialization failed"))
         }
     }
 
@@ -1276,14 +1203,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(onboardingComplete = true, provider = saved, startupStage = StartupStage.READY) }
         refreshActiveApiKey(profile.kind)
         pingApi()
-    }
-
-    fun finishAntigravityOnboarding() {
-        check(_state.value.antigravityAuth.status == AntigravityAuthStatus.SIGNED_IN) {
-            "Sign in to Antigravity first"
-        }
-        preferences.onboardingComplete = true
-        _state.update { it.copy(onboardingComplete = true, startupStage = StartupStage.READY) }
     }
 
     /** Lets first-run users escape a provider/login failure without losing saved credentials. */
@@ -1479,116 +1398,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startAntigravityLogin() {
-        if (_state.value.agentInstalling != null || _state.value.isRunning) return
-        lastOpenedAntigravityAuthUrl = null
-        viewModelScope.launch { antigravityAuthController.beginLogin() }
-    }
-
-    fun submitAntigravityCode(code: String) {
-        runCatching { antigravityAuthController.submitCode(code) }
-            .onFailure { error -> _state.update { it.copy(toastMessage = error.message ?: "Could not submit the code") } }
-    }
-
-    fun logoutAntigravity() {
-        viewModelScope.launch {
-            runCatching { antigravityAuthController.logout() }
-                .onFailure { error -> _state.update { it.copy(toastMessage = error.message ?: "Could not sign out") } }
-        }
-    }
-
-    fun setAntigravityModel(model: String) {
-        preferences.antigravityModel = model
-        val modelEffort = antigravityEffortFromModel(model)
-        if (modelEffort != null) preferences.antigravityEffort = modelEffort
-        _state.update {
-            it.copy(
-                antigravityModel = model,
-                antigravityEffort = modelEffort ?: it.antigravityEffort,
-            )
-        }
-    }
-
-    fun setAntigravityEffort(effort: String) {
-        if (effort !in setOf("low", "medium", "high")) return
-        val current = _state.value
-        val matchingModel = antigravityModelWithEffort(current.antigravityModel, effort)
-            ?.takeIf { candidate -> current.antigravityModels.isEmpty() || candidate in current.antigravityModels }
-        if (current.antigravityModel.isNotBlank() &&
-            antigravityEffortFromModel(current.antigravityModel) != null &&
-            matchingModel == null
-        ) {
-            _state.update { it.copy(toastMessage = "This model does not offer ${effort.replaceFirstChar(Char::uppercase)} reasoning") }
-            return
-        }
-        preferences.antigravityEffort = effort
-        matchingModel?.let { preferences.antigravityModel = it }
-        _state.update {
-            it.copy(
-                antigravityEffort = effort,
-                antigravityModel = matchingModel ?: it.antigravityModel,
-            )
-        }
-    }
-
-    fun refreshAntigravityModels() {
-        if (_state.value.antigravityModelsLoading || !installer.isAgentInstalled(AgentKind.ANTIGRAVITY)) return
-        _state.update { it.copy(antigravityModelsLoading = true) }
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = runCatching {
-                val runtime = installer.installedRuntime()
-                val workspace = File(getApplication<Application>().filesDir, "workspaces/antigravity-models").apply { mkdirs() }
-                val process = installer.process(
-                    runtime.proot,
-                    runtime.rootfs,
-                    workspace,
-                    emptyMap(),
-                    listOf(com.jarves.mh.runtime.RuntimeInstaller.AGY_GUEST_PATH, "models"),
-                    guestWorkspacePath = "/workspace/antigravity-models",
-                    emulateHardLinks = false,
-                )
-                while (process.isAlive) delay(50)
-                check(process.waitFor() == 0) { "Could not list Antigravity models" }
-                val output = (process as? NativeSpawnProcess)?.outputFile?.readText().orEmpty()
-                output.lineSequence()
-                    .map { sanitizeTerminalOutput(it).trim() }
-                    .mapNotNull { line -> line.split(Regex("\\s+"), limit = 2).firstOrNull() }
-                    .filter { it.matches(Regex("[a-z0-9][a-z0-9._-]+")) }
-                    .distinct()
-                    .toList()
-                    .also { check(it.isNotEmpty()) { "Antigravity returned no models" } }
-            }
-            withContext(Dispatchers.Main) {
-                _state.update { current ->
-                    result.fold(
-                        onSuccess = { models ->
-                            val preferred = antigravityModelWithEffort(
-                                current.antigravityModel,
-                                current.antigravityEffort,
-                            )?.takeIf(models::contains)
-                            val selected = preferred
-                                ?: current.antigravityModel.takeIf(models::contains)
-                                ?: models.first()
-                            val selectedEffort = antigravityEffortFromModel(selected) ?: current.antigravityEffort
-                            preferences.antigravityModel = selected
-                            preferences.antigravityEffort = selectedEffort
-                            current.copy(
-                                antigravityModelsLoading = false,
-                                antigravityModels = models,
-                                antigravityModel = selected,
-                                antigravityEffort = selectedEffort,
-                            )
-                        },
-                        onFailure = { error -> current.copy(
-                            antigravityModelsLoading = false,
-                            toastMessage = error.message ?: "Could not load Antigravity models",
-                        ) },
-                    )
-                }
-            }
-        }
-    }
-
     /** Called from the first-launch tool picker; persists the choice for setup and Settings. */
     fun toggleDevStack(stack: DevStack) {
         if (stack == DevStack.WEB) return
@@ -1743,10 +1552,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun pingApi() {
-        if (_state.value.agentKind == AgentKind.ANTIGRAVITY) {
-            testAntigravityConnection()
-            return
-        }
         val profile = _state.value.provider
         if (profile.baseUrl.isBlank() || profile.model.isBlank()) return
         if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
@@ -1768,49 +1573,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(apiPingStatus = ApiPingStatus.FAILED, apiPingMessage = result.message)
                 }
             }
-        }
-    }
-
-    /** Sends a tiny hello to the agy CLI to prove it actually answers. Silent timeout inside. */
-    fun testAntigravityConnection() {
-        if (_state.value.agentKind != AgentKind.ANTIGRAVITY) return
-        if (_state.value.apiPingStatus == ApiPingStatus.PINGING) return
-        if (_state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
-            _state.update {
-                it.copy(
-                    apiPingStatus = ApiPingStatus.FAILED,
-                    apiPingMessage = "Antigravity needs Google sign-in",
-                )
-            }
-            return
-        }
-        _state.update { it.copy(apiPingStatus = ApiPingStatus.PINGING, apiPingMessage = "Saying hello to Antigravity…") }
-        viewModelScope.launch {
-            val result = runCatching { antigravityRuntime.hello() }
-            result.onSuccess {
-                _state.update {
-                    it.copy(
-                        apiPingStatus = ApiPingStatus.OK,
-                        apiPingMessage = "Antigravity is Working!",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(apiPingStatus = ApiPingStatus.FAILED, apiPingMessage = helloFailureMessage(error.message.orEmpty()))
-                }
-            }
-        }
-    }
-
-    private fun helloFailureMessage(raw: String): String {
-        val value = raw.replace(Regex("\\s+"), " ").trim()
-        return when {
-            value.contains("not installed", true) -> "Antigravity CLI is not installed. Install it from the Coding agent section."
-            value.contains("sign-in", true) || value.contains("not signed in", true) ||
-                value.contains("authentication", true) -> "Antigravity needs Google sign-in. Reconnect from the Google connection section."
-            value.contains("did not answer", true) -> "Antigravity did not answer. Try again."
-            value.isBlank() -> "Antigravity did not answer. Try again."
-            else -> value.take(200)
         }
     }
 
@@ -1914,7 +1676,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val workspaceDir = File(getApplication<Application>().filesDir, "workspaces/${active.id}")
             val userFiles = if (workspaceDir.isDirectory) {
                 workspaceDir.walkTopDown().filter { file ->
-                    file.isFile && !file.name.startsWith(".claude") && file.name != ".pocket-dev-stacks.json"
+                    file.isFile && !file.name.startsWith(".dsh") && file.name != ".pocket-dev-stacks.json"
                 }.count()
             } else 0
 
@@ -2639,12 +2401,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val base = File(getApplication<Application>().filesDir, "workspaces/${project.id}")
         if (!base.isDirectory) return null
         val visible = base.listFiles().orEmpty().filterNot { file ->
-            file.name == ".claude" || file.name == ".claude.json"
+            file.name == ".dsh"
         }
         val onlyDirectory = visible.singleOrNull()?.takeIf(File::isDirectory) ?: return null
         val containsProjectFiles = onlyDirectory.walkTopDown()
             .maxDepth(2)
-            .any { it.isFile && it.name !in setOf(".DS_Store", ".claude.json") }
+            .any { it.isFile && it.name != ".DS_Store" }
         return onlyDirectory.name.takeIf { containsProjectFiles && !it.contains("..") }
     }
 
@@ -2832,7 +2594,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .maxDepth(12)
             .onEnter { directory ->
                 val relative = if (directory == root) "" else directory.relativeTo(root).invariantSeparatorsPath
-                directory == root || (!isClaudeRuntimeMetadata(relative) &&
+                directory == root || (!isAgentMetadataHidden(relative) &&
                     !Files.isSymbolicLink(directory.toPath()) &&
                     runCatching { directory.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false)
                     )
@@ -2840,7 +2602,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .drop(1)
             .filter { file ->
                 val relative = file.relativeTo(root).invariantSeparatorsPath
-                !isClaudeRuntimeMetadata(relative) &&
+                !isAgentMetadataHidden(relative) &&
                     !Files.isSymbolicLink(file.toPath()) &&
                     runCatching { file.canonicalFile.toPath().startsWith(rootPath) }.getOrDefault(false)
             }
@@ -2859,18 +2621,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .toList()
     }
 
-    private fun isClaudeRuntimeMetadata(relativePath: String): Boolean {
-        return relativePath == ".claude" ||
-            relativePath == ".claude.json" ||
-            relativePath.startsWith(".claude/")
+    private fun isAgentMetadataHidden(relativePath: String): Boolean {
+        return relativePath == ".dsh" || relativePath.startsWith(".dsh/")
     }
 
     private fun isExportExcludedPath(relativePath: String): Boolean {
         val excludedNames = setOf(
-            ".git", ".claude", ".gradle", ".idea", ".next", ".cache",
+            ".git", ".dsh", ".gradle", ".idea", ".next", ".cache",
             "node_modules", ".venv", "venv", "__pycache__", "build",
         )
-        return relativePath.split('/').any { it in excludedNames } || isClaudeRuntimeMetadata(relativePath)
+        return relativePath.split('/').any { it in excludedNames } || isAgentMetadataHidden(relativePath)
     }
 
     fun addChatAttachments(uris: List<Uri>) {
@@ -3000,15 +2760,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendPrompt(prompt: String) {
         val project = state.value.activeProject ?: return
-        if (_state.value.agentKind == AgentKind.ANTIGRAVITY &&
-            _state.value.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN) {
-            _state.update { it.copy(toastMessage = "Sign in to Antigravity from Settings before starting a task.") }
-            return
-        }
-        if (_state.value.agentKind == AgentKind.DEEPSEEK_HARNESS && _state.value.provider.kind == ProviderKind.CLAUDE) {
-            _state.update { it.copy(toastMessage = "Claude subscription login is not supported by DeepSeek Harness — pick a key-based provider in Settings.") }
-            return
-        }
         val attachments = state.value.pendingAttachments
         if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
@@ -3127,13 +2878,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun isNoisyRuntimeItem(item: ActivityItem): Boolean {
         val combined = "${item.title} ${item.detail}"
-        return combined.contains("Starting Claude Code", true) ||
-            combined.contains("Agent process started", true) ||
-            combined.contains("Claude Code connected", true) ||
+        return combined.contains("Agent process started", true) ||
             combined.contains("Runtime warning", true) ||
             combined.contains("unrecognized_model", true) ||
             combined.contains("Writing response", true) ||
-            combined.contains("Claude Code finished", true) ||
             combined.contains("Task completed", true)
     }
 
@@ -3221,10 +2969,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun onRuntimeEvent(event: RuntimeEvent) {
-        if (event is RuntimeEvent.SessionFailed && _state.value.agentKind == AgentKind.ANTIGRAVITY &&
-            (event.reason.contains("sign-in", true) || event.reason.contains("authentication", true))) {
-            antigravityAuthController.invalidateSession(event.reason)
-        }
         if (event is RuntimeEvent.SessionFailed && retryWithNextApiKey(event)) return
         _state.update { current ->
             if (!current.isRunning) {
@@ -3330,10 +3074,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is RuntimeEvent.ToolApproved -> appendWorkItem(current.copy(
                     pendingApproval = null,
                     activity = listOf(ActivityItem("Applying approved changes", "Editing project files", false)) + current.activity,
-                ), ActivityItem("Action approved", "Claude is continuing the task", false))
+                ), ActivityItem("Action approved", "Agent is continuing the task", false))
                 is RuntimeEvent.ToolRejected -> appendWorkItem(current.copy(
                     pendingApproval = null,
-                ), ActivityItem("Action rejected", "Claude will continue without this action"))
+                ), ActivityItem("Action rejected", "Agent will continue without this action"))
                 is RuntimeEvent.ToolCompleted -> {
                     val runningIndex = current.liveProcess.indexOfLast {
                         !it.isComplete && it.title == "Running ${event.toolName}"
@@ -3430,7 +3174,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
-        if (current.agentKind == AgentKind.ANTIGRAVITY) return false
         if (!current.isRunning || current.activeSessionId != event.sessionId) return false
         if (!isApiKeyFailure(event.reason)) return false
         val request = activeRuntimeRequest ?: return false

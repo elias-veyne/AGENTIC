@@ -9,50 +9,11 @@ import com.jarves.mh.model.inferredDshApiForUrl
 import com.jarves.mh.model.providerProtocolForAgent
 import com.jarves.mh.model.providersForAgent
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONArray
 import org.json.JSONObject
-
-class DshHeadlessParserTest {
-    @Test
-    fun emptyReasoningHeadingStartsSection() {
-        assertEquals(DshLine.ReasoningHeading, DshHeadlessParser.parseLine("dsh: reasoning:"))
-    }
-
-    @Test
-    fun inlineReasoningDeltaIsReasoning() {
-        val parsed = DshHeadlessParser.parseLine("dsh: reasoning: checking the workspace")
-        assertEquals(DshLine.Reasoning("checking the workspace"), parsed)
-    }
-
-    @Test
-    fun errorDiagnosticIsDiagnostic() {
-        val parsed = DshHeadlessParser.parseLine("dsh: MISSING_CREDENTIAL: llm-deepseek: no API key")
-        assertTrue(parsed is DshLine.Diagnostic)
-        assertEquals("MISSING_CREDENTIAL: llm-deepseek: no API key", (parsed as DshLine.Diagnostic).text)
-    }
-
-    @Test
-    fun authFailureIsDiagnostic() {
-        val parsed = DshHeadlessParser.parseLine("dsh: AUTH: Authentication Fails, key is invalid")
-        assertTrue(parsed is DshLine.Diagnostic)
-    }
-
-    @Test
-    fun plainTextIsAnswer() {
-        val parsed = DshHeadlessParser.parseLine("Here is the summary of your project.")
-        assertEquals(DshLine.Answer("Here is the summary of your project."), parsed)
-    }
-
-    @Test
-    fun whitespaceIsTrimmed() {
-        val parsed = DshHeadlessParser.parseLine("   done   ")
-        assertEquals(DshLine.Answer("done"), parsed)
-    }
-}
 
 class DshSdkProtocolParserTest {
     private val parser = DshSdkProtocolParser("session-1")
@@ -210,11 +171,6 @@ class DshRouteMapperTest {
         assertEquals("openai-completions", route.custom?.api)
         assertEquals("https://integrate.api.nvidia.com/v1", route.custom?.baseUrl)
     }
-
-    @Test(expected = IllegalArgumentException::class)
-    fun claudeSubscriptionIsRejected() {
-        DshRouteMapper.forProfile(ProviderProfile(ProviderKind.CLAUDE))
-    }
 }
 
 class AgentProviderPresetTest {
@@ -234,7 +190,6 @@ class AgentProviderPresetTest {
             dshApi = "openai-completions",
         )
         assertEquals(ProviderProtocol.OPENAI_CHAT, providerProtocolForAgent(profile, AgentKind.DEEPSEEK_HARNESS))
-        assertEquals(ProviderProtocol.ANTHROPIC_GATEWAY, providerProtocolForAgent(profile, AgentKind.CLAUDE_CODE))
     }
 
     @Test
@@ -260,26 +215,27 @@ class AgentProviderPresetTest {
     }
 
     @Test
-    fun dshHarnessExcludesClaudeSubscription() {
-        assertFalse(ProviderKind.CLAUDE in DEEPSEEK_HARNESS_PROVIDERS)
+    fun dshHarnessSupportsEveryKeyBasedProvider() {
         assertTrue(ProviderKind.OPENCODE_ZEN in DEEPSEEK_HARNESS_PROVIDERS)
         assertTrue(ProviderKind.DEEPSEEK in DEEPSEEK_HARNESS_PROVIDERS)
         assertTrue(ProviderKind.NVIDIA_NIM in DEEPSEEK_HARNESS_PROVIDERS)
+        assertTrue(ProviderKind.ANTHROPIC in DEEPSEEK_HARNESS_PROVIDERS)
+        assertTrue(ProviderKind.LLM_ROUTER in DEEPSEEK_HARNESS_PROVIDERS)
+        assertTrue(ProviderKind.KIMI in DEEPSEEK_HARNESS_PROVIDERS)
+        assertTrue(ProviderKind.CUSTOM in DEEPSEEK_HARNESS_PROVIDERS)
         assertEquals(7, DEEPSEEK_HARNESS_PROVIDERS.size)
     }
 
     @Test
-    fun openCodeZenIsOnlyShownForDeepSeekHarness() {
-        assertTrue(ProviderKind.OPENCODE_ZEN in providersForAgent(AgentKind.DEEPSEEK_HARNESS))
-        assertFalse(ProviderKind.OPENCODE_ZEN in providersForAgent(AgentKind.CLAUDE_CODE))
+    fun everyProviderIsUsableWithDeepSeekHarness() {
+        assertEquals(ProviderKind.entries, providersForAgent(AgentKind.DEEPSEEK_HARNESS))
     }
 
     @Test
     fun agentKindsAreStable() {
-        assertEquals(AgentKind.CLAUDE_CODE, AgentKind.valueOf("CLAUDE_CODE"))
         assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.valueOf("DEEPSEEK_HARNESS"))
-        assertEquals(AgentKind.ANTIGRAVITY, AgentKind.fromStored("antigravity"))
-        assertEquals(AgentKind.CLAUDE_CODE, AgentKind.fromStored("CLAUDE_CODE"))
+        assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.fromStored("deepseek-harness"))
         assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.fromStored("DEEPSEEK_HARNESS"))
+        assertEquals(AgentKind.DEEPSEEK_HARNESS, AgentKind.fromStored("unknown-value"))
     }
 }

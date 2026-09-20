@@ -259,7 +259,7 @@ class RuntimeSetupService : Service() {
                 .toSet()
             val agent = runCatching {
                 com.jarves.mh.model.AgentKind.valueOf(intent?.getStringExtra(EXTRA_AGENT).orEmpty())
-            }.getOrDefault(com.jarves.mh.model.AgentKind.CLAUDE_CODE)
+            }.getOrDefault(com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS)
             RuntimeSetupController.begin(this)
             installJob = scope.launch {
                 try {

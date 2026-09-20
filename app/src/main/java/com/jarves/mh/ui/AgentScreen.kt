@@ -101,7 +101,6 @@ import com.jarves.mh.model.providersForAgent
 import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
-import com.jarves.mh.runtime.AntigravityAuthStatus
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.launch
@@ -113,42 +112,14 @@ private data class KeyConnectionStatus(
     val label: String = if (successful == true) "Verified" else "Failed",
 )
 
-/** Formats Antigravity model identifiers into clean, human-friendly names. */
-internal fun formatAntigravityModelName(id: String): String = when (id) {
-    "gemini-3.8-flash-high" -> "Gemini 3.8 Flash (High)"
-    "gemini-3.8-flash-medium" -> "Gemini 3.8 Flash"
-    "gemini-3.8-flash-low" -> "Gemini 3.8 Flash (Low)"
-    "gemini-3.6-flash-high" -> "Gemini 3.6 Flash (High)"
-    "gemini-3.6-flash-medium" -> "Gemini 3.6 Flash"
-    "gemini-3.6-flash-low" -> "Gemini 3.6 Flash (Low)"
-    "gemini-3.1-pro-high" -> "Gemini 3.1 Pro (High)"
-    "gemini-3.1-pro-low" -> "Gemini 3.1 Pro (Low)"
-    "claude-sonnet-4-6" -> "Claude 3.7 Sonnet"
-    "claude-opus-4-6-thinking" -> "Claude 3.7 Opus (Thinking)"
-    "gpt-oss-120b-medium" -> "GPT-OSS 120B"
-    else -> id.split("-").joinToString(" ") { word ->
-        word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
-    }
-}
-
-/** Returns tier classification badges for Antigravity models. */
-internal fun formatAntigravityModelTier(id: String): String = when {
-    id.contains("3.8") -> "Recommended"
-    id.contains("3.6") -> "Stable"
-    id.contains("3.1-pro") -> "Pro Reasoning"
-    id.contains("claude") -> "Anthropic"
-    id.contains("gpt") -> "Open Source"
-    else -> ""
-}
-
 /**
  * Dedicated Agent + AI connection hub.
  *
  * Replaces the old dashboard Terminal tab. Terminal is now a FAB
  * on the project/workspace screen; this screen owns:
  *  1. Status hero (active agent + model + connectivity)
- *  2. Coding agent picker + installs + updates
- *  3. AI connection (Antigravity OAuth OR provider + model + API keys)
+ *  2. Coding agent install + updates
+ *  3. AI connection (provider + model + API keys)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,12 +138,6 @@ fun AgentScreen(
     onInstallAgent: (AgentKind) -> Unit = {},
     onCheckAgentUpdates: () -> Unit = {},
     onUpdateAgent: (AgentKind) -> Unit = {},
-    onStartAntigravityLogin: () -> Unit = {},
-    onSubmitAntigravityCode: (String) -> Unit = {},
-    onLogoutAntigravity: () -> Unit = {},
-    onRefreshAntigravityModels: () -> Unit = {},
-    onSetAntigravityModel: (String) -> Unit = {},
-    onSetAntigravityEffort: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
@@ -197,10 +162,6 @@ fun AgentScreen(
     var keyConnectionStatuses by remember(selectedKind) {
         mutableStateOf<Map<String, KeyConnectionStatus>>(emptyMap())
     }
-    // Antigravity model sheet state
-    var showAntigravityModelSheet by rememberSaveable { mutableStateOf(false) }
-    var antigravitySearch by rememberSaveable { mutableStateOf("") }
-    var antigravityCode by rememberSaveable { mutableStateOf("") }
     var viewedAgent by rememberSaveable { mutableStateOf(state.agentKind) }
 
     val orderedAgents = remember(state.primaryAgentKind) {
@@ -210,36 +171,11 @@ fun AgentScreen(
         state.installedAgentVersions.containsKey(viewedAgent)
 
     val providerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val antigravitySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val filteredModels = remember(models, modelSearch) {
         val q = modelSearch.trim()
         if (q.isBlank()) models else models.filter {
             it.id.contains(q, true) || it.displayName.contains(q, true)
-        }
-    }
-
-    val antigravityModelList = remember(state.antigravityModels) {
-        if (state.antigravityModels.isNotEmpty()) state.antigravityModels
-        else listOf(
-            "gemini-3.8-flash-high",
-            "gemini-3.8-flash-medium",
-            "gemini-3.6-flash-high",
-            "gemini-3.6-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.1-pro-high",
-            "gemini-3.1-pro-low",
-            "claude-sonnet-4-6",
-            "claude-opus-4-6-thinking",
-            "gpt-oss-120b-medium",
-        )
-    }
-
-    val filteredAntigravityModels = remember(antigravityModelList, antigravitySearch) {
-        val q = antigravitySearch.trim()
-        if (q.isBlank()) antigravityModelList
-        else antigravityModelList.filter {
-            it.contains(q, true) || formatAntigravityModelName(it).contains(q, true)
         }
     }
 
@@ -290,136 +226,13 @@ fun AgentScreen(
     }
 
     // ── Live connection status calculations ──
-    val isAntigravity = state.agentKind == AgentKind.ANTIGRAVITY
-    val antigravityTesting = isAntigravity && state.apiPingStatus == ApiPingStatus.PINGING
-    val antigravityHelloFailed = isAntigravity && state.apiPingStatus == ApiPingStatus.FAILED
-    val pillLoading = antigravityTesting || (!isAntigravity && state.apiPingStatus == ApiPingStatus.PINGING)
+    val pillLoading = state.apiPingStatus == ApiPingStatus.PINGING
 
-    val (dot, label, pillBg) = if (isAntigravity) {
-        when {
-            antigravityTesting -> Triple(PocketOrange, "Testing…", PocketOrange.copy(alpha = 0.13f))
-            state.antigravityAuth.status != AntigravityAuthStatus.SIGNED_IN || antigravityHelloFailed ->
-                Triple(MaterialTheme.colorScheme.error, "Attention", MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
-            else -> Triple(Color(0xFF58C9A3), "Online", Color(0xFF58C9A3).copy(alpha = 0.13f))
-        }
-    } else {
-        when (state.apiPingStatus) {
-            ApiPingStatus.OK -> Triple(Color(0xFF58C9A3), "Online", Color(0xFF58C9A3).copy(alpha = 0.13f))
-            ApiPingStatus.FAILED -> Triple(MaterialTheme.colorScheme.error, "Attention", MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
-            ApiPingStatus.PINGING -> Triple(PocketOrange, "Testing…", PocketOrange.copy(alpha = 0.13f))
-            ApiPingStatus.IDLE -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, "Not tested", MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-        }
-    }
-
-    // ── Antigravity Model Modal Bottom Sheet ──
-    if (showAntigravityModelSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showAntigravityModelSheet = false },
-            sheetState = antigravitySheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.82f)
-                    .padding(horizontal = 20.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Select Model", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(
-                            "${filteredAntigravityModels.size} available for Antigravity",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(onClick = onRefreshAntigravityModels, enabled = !state.antigravityModelsLoading) {
-                        if (state.antigravityModelsLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.Refresh, "Refresh models")
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = antigravitySearch,
-                    onValueChange = { antigravitySearch = it },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    placeholder = { Text("Search model or series") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                )
-                Spacer(Modifier.height(12.dp))
-
-                if (filteredAntigravityModels.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No matching models found", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                } else {
-                    LazyColumn(
-                        Modifier.weight(1f),
-                        contentPadding = PaddingValues(bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(filteredAntigravityModels, key = { it }) { modelId ->
-                            val isSelected = state.antigravityModel == modelId
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) PocketOrange.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isSelected) PocketOrange.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSetAntigravityModel(modelId)
-                                        showAntigravityModelSheet = false
-                                    },
-                            ) {
-                                Row(
-                                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                formatAntigravityModelName(modelId),
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 14.sp,
-                                                color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurface,
-                                            )
-                                            val tier = formatAntigravityModelTier(modelId)
-                                            if (tier.isNotEmpty()) {
-                                                Spacer(Modifier.width(8.dp))
-                                                Surface(
-                                                    color = if (isSelected) PocketOrange.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                                                    shape = RoundedCornerShape(4.dp),
-                                                ) {
-                                                    Text(
-                                                        tier,
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isSelected) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Text(
-                                            modelId,
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    AgentSelectionDot(selected = isSelected)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    val (dot, label, pillBg) = when (state.apiPingStatus) {
+        ApiPingStatus.OK -> Triple(Color(0xFF58C9A3), "Online", Color(0xFF58C9A3).copy(alpha = 0.13f))
+        ApiPingStatus.FAILED -> Triple(MaterialTheme.colorScheme.error, "Attention", MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+        ApiPingStatus.PINGING -> Triple(PocketOrange, "Testing…", PocketOrange.copy(alpha = 0.13f))
+        ApiPingStatus.IDLE -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, "Not tested", MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
     }
 
     // ── Provider Models Modal Bottom Sheet ──
@@ -743,11 +556,7 @@ fun AgentScreen(
                         Column {
                             Text("AI Agent", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                             Text(
-                                if (isAntigravity) {
-                                    "Antigravity · ${formatAntigravityModelName(state.antigravityModel)}"
-                                } else {
-                                    "${state.agentKind.title} · ${model.ifBlank { selectedKind.title }}"
-                                },
+                                "${state.agentKind.title} · ${model.ifBlank { selectedKind.title }}",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -809,9 +618,7 @@ fun AgentScreen(
                                 val isInstalled = agent == state.agentKind || state.installedAgentVersions.containsKey(agent)
                                 val updateAvailable = state.agentUpdates.containsKey(agent)
                                 val shortTitle = when (agent) {
-                                    AgentKind.ANTIGRAVITY -> "Antigravity"
                                     AgentKind.DEEPSEEK_HARNESS -> "DeepSeek"
-                                    AgentKind.CLAUDE_CODE -> "Claude Code"
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
@@ -936,23 +743,10 @@ fun AgentScreen(
                 }
             }
 
-            // ── 2. Primary Configuration Card (Antigravity OR Provider) ──
+            // ── 2. Primary Configuration Card (Provider) ──
             item {
                 if (!viewedAgentInstalled || viewedAgent != state.agentKind) {
                     // Installation/selection guidance is shown directly below the tabs.
-                } else if (state.agentKind == AgentKind.ANTIGRAVITY) {
-                    AgentAntigravityCard(
-                        state = state,
-                        code = antigravityCode,
-                        onCode = { antigravityCode = it },
-                        onStartLogin = onStartAntigravityLogin,
-                        onSubmitCode = { onSubmitAntigravityCode(antigravityCode); antigravityCode = "" },
-                        onLogout = onLogoutAntigravity,
-                        onRefreshModels = onRefreshAntigravityModels,
-                        onOpenModelSheet = { showAntigravityModelSheet = true },
-                        onSetEffort = onSetAntigravityEffort,
-                        onTest = onPing,
-                    )
                 } else {
                     AgentProviderCard(
                         state = state,
@@ -1040,15 +834,7 @@ fun AgentScreen(
                                 val kind = selectedKind
                                 val url = if (kind.fixedBaseUrl) kind.defaultBaseUrl else baseUrl.trim()
                                 val profile = ProviderProfile(kind, url, model.trim(), dshApi = dshApi)
-                                if (kind == ProviderKind.CLAUDE) {
-                                    onSaveProvider(profile, apiKey.trim())
-                                    status = "Claude subscription token saved securely. Send a message to verify your subscription."
-                                    statusOk = true
-                                    activeKeyId?.let {
-                                        keyConnectionStatuses = keyConnectionStatuses +
-                                            (it to KeyConnectionStatus("Subscription token saved", true, label = "Saved"))
-                                    }
-                                } else when (val result = onValidateProvider(profile, apiKey.trim(), models)) {
+                                when (val result = onValidateProvider(profile, apiKey.trim(), models)) {
                                     is ConnectionValidation.Success -> {
                                         onSaveProvider(profile, apiKey.trim())
                                         if (activeKeyId != null) {
@@ -1103,334 +889,6 @@ fun AgentScreen(
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * Modern Antigravity Configuration Bento Card.
- */
-@Composable
-private fun AgentAntigravityCard(
-    state: AppUiState,
-    code: String,
-    onCode: (String) -> Unit,
-    onStartLogin: () -> Unit,
-    onSubmitCode: () -> Unit,
-    onLogout: () -> Unit,
-    onRefreshModels: () -> Unit,
-    onOpenModelSheet: () -> Unit,
-    onSetEffort: (String) -> Unit,
-    onTest: () -> Unit,
-) {
-    val clipboard = LocalClipboardManager.current
-    val auth = state.antigravityAuth
-
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text("Google account", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            // Google Account Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .background(Color(0xFF34A853).copy(alpha = 0.14f), RoundedCornerShape(10.dp))
-                        .border(1.dp, Color(0xFF34A853).copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("G", color = Color(0xFF34A853), fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    val email = auth.accountEmail
-                    Text(
-                        email ?: if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected" else "Not signed in",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        if (auth.status == AntigravityAuthStatus.SIGNED_IN) "Connected with Google" else "Required for Antigravity",
-                        fontSize = 11.sp,
-                        color = if (auth.status == AntigravityAuthStatus.SIGNED_IN) Color(0xFF2E9D72) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                    Text(
-                        "Disconnect",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clickable { onLogout() }
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            // Authentication actions if not signed in
-            when (auth.status) {
-                AntigravityAuthStatus.STARTING, AntigravityAuthStatus.COMPLETING -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                AntigravityAuthStatus.AWAITING_CODE -> {
-                    auth.authorizationUrl?.let { url ->
-                        OutlinedButton(
-                            onClick = { clipboard.setText(AnnotatedString(url)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Text("Copy Google Sign-in URL")
-                        }
-                    }
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = onCode,
-                        label = { Text("One-time authorization code") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    Button(
-                        onClick = onSubmitCode,
-                        enabled = code.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Text("Complete Sign-in")
-                    }
-                }
-                AntigravityAuthStatus.SIGNED_OUT, AntigravityAuthStatus.ERROR -> {
-                    Button(
-                        onClick = onStartLogin,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Text(if (auth.status == AntigravityAuthStatus.ERROR) "Reconnect with Google" else "Sign in with Google")
-                    }
-                }
-                AntigravityAuthStatus.SIGNED_IN -> {}
-            }
-
-            if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-
-                // Active Intelligence Model Tile
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "Active Intelligence Model",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable(enabled = !state.antigravityModelsLoading) { onRefreshModels() }
-                                .padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
-                        ) {
-                            if (state.antigravityModelsLoading) {
-                                CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.4.dp)
-                                Spacer(Modifier.width(4.dp))
-                            }
-                            Text(
-                                "Sync",
-                                fontSize = 11.sp,
-                                color = PocketOrange,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onOpenModelSheet() },
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(PocketOrange.copy(alpha = 0.12f), RoundedCornerShape(9.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = PocketOrange,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                val currentModel = state.antigravityModel.ifBlank { "Select model" }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        formatAntigravityModelName(currentModel),
-                                        modifier = Modifier.weight(1f),
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(
-                                    currentModel,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Icon(
-                                Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Choose model",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-
-                // Reasoning Depth (Effort) Segmented Capsule
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    val effortCaption = when (state.antigravityEffort) {
-                        "low" -> "Fast response · light reasoning"
-                        "medium" -> "Balanced speed & logic"
-                        "high" -> "Maximum reasoning depth"
-                        else -> "Balanced speed & logic"
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "Reasoning Depth",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            effortCaption,
-                            fontSize = 11.sp,
-                            color = PocketOrange,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(3.dp),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            listOf("low", "medium", "high").forEach { effort ->
-                                val isSelected = state.antigravityEffort == effort
-                                Surface(
-                                    shape = RoundedCornerShape(9.dp),
-                                    color = if (isSelected) PocketOrange else Color.Transparent,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { onSetEffort(effort) },
-                                ) {
-                                    Box(
-                                        modifier = Modifier.padding(vertical = 7.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            effort.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() },
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) Color(0xFF241107) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (auth.status == AntigravityAuthStatus.SIGNED_IN) {
-                OutlinedButton(
-                    onClick = onTest,
-                    enabled = state.apiPingStatus != ApiPingStatus.PINGING,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(13.dp),
-                    border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
-                ) {
-                    if (state.apiPingStatus == ApiPingStatus.PINGING) {
-                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = PocketOrange)
-                        Spacer(Modifier.width(8.dp))
-                    } else {
-                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(
-                        if (state.apiPingStatus == ApiPingStatus.PINGING) "Testing connection…" else "Test connection",
-                        color = PocketOrange,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-
-                state.apiPingMessage?.takeIf { state.apiPingStatus != ApiPingStatus.IDLE }?.let { message ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (state.apiPingStatus == ApiPingStatus.FAILED) Icons.Default.Warning else Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = if (state.apiPingStatus == ApiPingStatus.FAILED) MaterialTheme.colorScheme.error else Color(0xFF2E9D72),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(7.dp))
-                        Text(
-                            message,
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
-                            color = if (state.apiPingStatus == ApiPingStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-            }
-
-            Text(
-                "Automatic tool approval · Runs inside the private Linux workspace",
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 }
@@ -1536,8 +994,7 @@ private fun AgentProviderCard(
                 }
             }
 
-            if (selectedKind != ProviderKind.CLAUDE) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                 PremiumSummaryRow(
                     icon = Icons.Default.Info,
@@ -1620,15 +1077,6 @@ private fun AgentProviderCard(
                     expanded = false,
                     onClick = onOpenModelSheet,
                 )
-            } else {
-                Text(
-                    "Run `claude setup-token` on a computer signed in to your Claude subscription, then save the generated token below.",
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 12.dp),
-                )
-            }
 
             if (status != null) {
                 Column(modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 8.dp)) {
@@ -1647,9 +1095,9 @@ private fun AgentProviderCard(
 
             PremiumSummaryRow(
                 icon = Icons.Default.Key,
-                title = if (selectedKind == ProviderKind.CLAUDE) "Subscription token" else "Credentials",
+                title = "Credentials",
                 subtitle = buildString {
-                    append(activeKey?.name ?: if (selectedKind == ProviderKind.CLAUDE) "No subscription token saved" else "No API key saved")
+                    append(activeKey?.name ?: "No API key saved")
                     if (activeKey != null) append(" · Active")
                     activeKeyStatus?.let {
                         append(" · ")
@@ -1693,7 +1141,7 @@ private fun AgentProviderCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (selectedKind == ProviderKind.CLAUDE) "Saved tokens (${savedKeys.size})" else "Saved keys (${savedKeys.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Text("Saved keys (${savedKeys.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                         Text(
                             if (addKeyExpanded) "Cancel" else "+ Add key",
                             fontSize = 11.sp,
@@ -1746,7 +1194,7 @@ private fun AgentProviderCard(
                                         onNewKeyName("${selectedKind.title} Key")
                                     } else onNewKeyName(input)
                                 },
-                                label = { Text(if (selectedKind == ProviderKind.CLAUDE) "Token name" else "Key name") },
+                                label = { Text("Key name") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
@@ -1754,7 +1202,7 @@ private fun AgentProviderCard(
                             OutlinedTextField(
                                 value = newApiKey,
                                 onValueChange = onNewApiKey,
-                                label = { Text(if (selectedKind == ProviderKind.CLAUDE) "Claude setup token" else "API key") },
+                                label = { Text("API key") },
                                 singleLine = true,
                                 visualTransformation = if (newKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -1767,7 +1215,7 @@ private fun AgentProviderCard(
                                 enabled = newKeyName.isNotBlank() && newApiKey.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
-                            ) { Text(if (selectedKind == ProviderKind.CLAUDE) "Save token" else "Save API key") }
+                            ) { Text("Save API key") }
                         }
                     }
                 }
@@ -1777,7 +1225,7 @@ private fun AgentProviderCard(
             OutlinedButton(
                 onClick = onValidate,
                 enabled = apiKey.isNotBlank() && !isDiscovering && !isValidating &&
-                    (selectedKind == ProviderKind.CLAUDE || (baseUrl.isNotBlank() && model.isNotBlank())),
+                    (baseUrl.isNotBlank() && model.isNotBlank()),
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(13.dp),
                 border = BorderStroke(1.dp, PocketOrange.copy(alpha = 0.7f)),
@@ -1786,16 +1234,11 @@ private fun AgentProviderCard(
                     CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.8.dp, color = PocketOrange)
                     Spacer(Modifier.width(8.dp))
                 } else {
-                    Icon(if (selectedKind == ProviderKind.CLAUDE) Icons.Default.Check else Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
+                    Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = PocketOrange)
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
-                    when {
-                        isValidating && selectedKind == ProviderKind.CLAUDE -> "Saving token…"
-                        isValidating -> "Testing connection…"
-                        selectedKind == ProviderKind.CLAUDE -> "Save subscription token"
-                        else -> "Test connection"
-                    },
+                    if (isValidating) "Testing connection…" else "Test connection",
                     color = PocketOrange,
                     fontWeight = FontWeight.SemiBold,
                 )

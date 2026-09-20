@@ -13,8 +13,7 @@ import org.json.JSONArray
  *
  * Each project workspace gets a baseline copy before a session runs; after the
  * run the baseline is diffed to produce reviewable [ChangeItem]s with
- * per-file Undo/Keep. Semantics mirror the original Claude bridge store so
- * both agents behave identically in the Changes tab.
+ * per-file Undo/Keep.
  */
 class WorkspaceCheckpoints(private val filesDir: File) {
     private val projectRoots = ConcurrentHashMap<String, String>()
@@ -234,7 +233,7 @@ class WorkspaceCheckpoints(private val filesDir: File) {
 
     fun isInternalRuntimePath(path: String): Boolean {
         val normalized = path.replace('\\', '/')
-        return normalized == ".claude" || normalized == ".claude.json" || normalized.startsWith(".claude/")
+        return normalized == ".dsh" || normalized.startsWith(".dsh/")
     }
 
     private fun digest(file: File): String {

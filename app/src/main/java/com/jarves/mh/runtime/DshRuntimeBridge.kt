@@ -25,14 +25,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * [RuntimeBridge] driving the official DeepSeek Harness (`dsh`) in headless
- * one-shot mode: `dsh --profile headless "<task>"`.
+ * [RuntimeBridge] driving the official DeepSeek Harness (`dsh`) over its
+ * newline-delimited JSON-RPC SDK protocol (`dsh --profile sdk`).
  *
- * Verified contract (dsh 0.1.2-rc.1): the final answer goes to stdout, provider
- * reasoning deltas stream under a `dsh: reasoning:` heading, failures print
- * `dsh: <CODE>: <message>`, exit 0 means the turn completed. Because the
- * native launcher merges stdout+stderr into one capture file, this bridge
- * separates the streams by the `dsh:` diagnostic prefix.
+ * Verified contract: the final answer streams as `assistant/chunk` deltas,
+ * tool calls arrive as `tool/call` + `tool/result`, a turn ends with
+ * `turn/end`, and failures surface as a JSON-RPC error or a `dsh: <CODE>`
+ * diagnostic. Because the native launcher merges stdout+stderr into one
+ * capture file, the parser treats a `dsh:` prefix as a failure signal.
  *
  * Auth and model selection are fully non-interactive: keys travel in the
  * process environment (`DEEPSEEK_API_KEY` for the native route, one shared
@@ -72,15 +72,6 @@ class DshRuntimeBridge(
         val secret = secretFor(provider).orEmpty()
         if (secret.isBlank()) {
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, "No API key is saved for ${provider.kind.title}."))
-            return@withContext sessionId
-        }
-        if (provider.kind == ProviderKind.CLAUDE) {
-            eventBus.emit(
-                RuntimeEvent.SessionFailed(
-                    sessionId,
-                    "Claude subscription login is not supported by DeepSeek Harness. Pick a key-based provider in Settings.",
-                ),
-            )
             return@withContext sessionId
         }
 
@@ -712,31 +703,7 @@ internal object DshRouteMapper {
                 defaultModel = model,
                 custom = DshCustomRoute(profile.dshApi.ifBlank { "anthropic-messages" }, profile.resolvedBaseUrl),
             )
-            ProviderKind.CLAUDE -> throw IllegalArgumentException("Claude subscription login is not supported by DeepSeek Harness")
         }
-    }
-}
-
-/** One classified line of merged headless output (stdout+stderr share a capture file). */
-internal sealed interface DshLine {
-    data object ReasoningHeading : DshLine
-    data class Reasoning(val text: String) : DshLine
-    data class Diagnostic(val text: String) : DshLine
-    data class Answer(val text: String) : DshLine
-}
-
-internal object DshHeadlessParser {
-    fun parseLine(rawLine: String): DshLine {
-        val line = rawLine.trim()
-        if (line.startsWith("dsh:")) {
-            val body = line.removePrefix("dsh:").trim()
-            if (body.startsWith("reasoning:")) {
-                val rest = body.removePrefix("reasoning:").trim()
-                return if (rest.isBlank()) DshLine.ReasoningHeading else DshLine.Reasoning(rest)
-            }
-            return DshLine.Diagnostic(body.ifBlank { line })
-        }
-        return DshLine.Answer(line)
     }
 }
 

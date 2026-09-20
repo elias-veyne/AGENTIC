@@ -32,31 +32,15 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getBoolean("background_setup_complete", false)
         set(value) { preferences.edit().putBoolean("background_setup_complete", value).apply() }
 
-    /** Coding agent engine the user picked during setup. Absent = pre-agent-choice install → Claude. */
+    /** Coding agent engine for the install. AGENTIC ships DeepSeek Harness only. */
     var agentKind: String
-        get() = preferences.getString("agent_kind", AgentKind.CLAUDE_CODE.stableId) ?: AgentKind.CLAUDE_CODE.stableId
+        get() = preferences.getString("agent_kind", AgentKind.DEEPSEEK_HARNESS.stableId) ?: AgentKind.DEEPSEEK_HARNESS.stableId
         set(value) { preferences.edit().putString("agent_kind", value).apply() }
 
     /** Agent chosen for the initial runtime installation; used as the leading UI tab. */
     var primaryAgentKind: String
         get() = preferences.getString("primary_agent_kind", "") ?: ""
         set(value) { preferences.edit().putString("primary_agent_kind", value).apply() }
-
-    var antigravityModel: String
-        get() = preferences.getString("agent_antigravity_model", "") ?: ""
-        set(value) { preferences.edit().putString("agent_antigravity_model", value).apply() }
-
-    var antigravityEffort: String
-        get() = preferences.getString("agent_antigravity_effort", "high") ?: "high"
-        set(value) { preferences.edit().putString("agent_antigravity_effort", value).apply() }
-
-    var antigravitySignedIn: Boolean
-        get() = preferences.getBoolean("agent_antigravity_signed_in", false)
-        set(value) { preferences.edit().putBoolean("agent_antigravity_signed_in", value).apply() }
-
-    var antigravityAccountEmail: String
-        get() = preferences.getString("agent_antigravity_account_email", "") ?: ""
-        set(value) { preferences.edit().putString("agent_antigravity_account_email", value).apply() }
 
     var githubLogin: String
         get() = preferences.getString("github_login", "") ?: ""
@@ -83,10 +67,7 @@ class AppPreferences(private val context: Context) {
     }
 
     private fun agentConversationKey(agent: AgentKind, projectId: String, chatId: String): String {
-        // Antigravity v2 sessions are created with an explicit CLI project so
-        // old default-project conversations cannot redirect writes to scratch.
-        val version = if (agent == AgentKind.ANTIGRAVITY) "v2_" else ""
-        return "agent_conversation_${version}${agent.stableId}_${projectId}_$chatId"
+        return "agent_conversation_${agent.stableId}_${projectId}_$chatId"
     }
 
     /** Pinned dsh version recorded when DeepSeek Harness was installed. */
@@ -165,20 +146,19 @@ class AppPreferences(private val context: Context) {
         val storedModel = storedKind?.let {
             preferences.getString("${sourcePrefix}model", it.defaultModel) ?: it.defaultModel
         }.orEmpty()
-        // Older builds copied the global Claude/Anthropic default into a new
+        // Older builds copied the global Anthropic default into a new
         // DeepSeek Harness profile. Treat that untouched, keyless placeholder
         // as unconfigured so DeepSeek opens on its own official provider.
-        val legacyClaudeDefaultInDeepSeek = agent == AgentKind.DEEPSEEK_HARNESS &&
+        val legacyAnthropicDefaultInDeepSeek = agent == AgentKind.DEEPSEEK_HARNESS &&
             storedKind == ProviderKind.ANTHROPIC &&
             !vault.contains(ProviderKind.ANTHROPIC.name) &&
             storedBaseUrl == ProviderKind.ANTHROPIC.defaultBaseUrl &&
             storedModel == ProviderKind.ANTHROPIC.defaultModel
         val kind = when {
             agent == null -> storedKind ?: ProviderKind.ANTHROPIC
-            agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyClaudeDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
+            agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyAnthropicDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
             storedKind != null && storedKind in providersForAgent(agent) -> storedKind
-            agent == AgentKind.DEEPSEEK_HARNESS -> ProviderKind.DEEPSEEK
-            else -> ProviderKind.ANTHROPIC
+            else -> ProviderKind.DEEPSEEK
         }
         val useStoredValues = storedKind == kind
         val savedModel = if (useStoredValues) {
