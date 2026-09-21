@@ -11,6 +11,8 @@ interface AgentManager {
     fun cancelTask(taskId: String): Boolean
     fun isHealthy(): Boolean
     fun getAgentInfo(): AgentInfo
+    fun sendHeartbeat(): Boolean
+    fun getWorkerId(): String
 }
 
 data class AgentInfo(

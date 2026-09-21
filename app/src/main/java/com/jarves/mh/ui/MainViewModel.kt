@@ -232,6 +232,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
+    private val config = SystemConfig(heartbeatIntervalSeconds = 30, retryMaxAttempts = 5)
+    private val agentManagerFactory = AgentManagerFactory(config)
+    private val workerMonitor = WorkerMonitor(config)
+    private val orchestrator = Orchestrator(config, workerMonitor)
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
     private val providerApi = ProviderApiClient()
@@ -287,6 +291,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch { dshRuntime.events.collect(::onRuntimeEvent) }
+        // Heartbeat polling for workers
+        viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                delay(config.heartbeatIntervalSeconds * 1000)
+                workerMonitor.checkHealth()
+            }
+        }
         if (!preferences.legacySeededCredentialRemoved) {
             vault.remove(ProviderKind.CUSTOM.name)
             preferences.legacySeededCredentialRemoved = true
@@ -1267,8 +1278,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { current ->
             current.copy(agentMode = newMode)
         }
+        
+        // Initialize workers in Agentic mode
+        if (newMode == AgentMode.AGENTIC) {
+            agentManagerFactory.setMode(AgentMode.AGENTIC)
+            orchestrator.addTaskListener { taskId, result ->
+                // Task callback - update UI when task completes
+                _state.update { it.copy(toastMessage = "Task $taskId completed") }
+            }
+        } else {
+            agentManagerFactory.setMode(AgentMode.SIMPLE)
+        }
     }
-
     /** Installs the other agent on demand (Settings) with live progress, then switches to it. */
     fun installAgent(kind: AgentKind) {
         if (_state.value.agentInstalling != null) return
