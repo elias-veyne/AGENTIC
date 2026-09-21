@@ -4,35 +4,12 @@ import com.jarves.mh.runtime.DeepSeekHarnessBridge
 
 /**
  * Abstraction layer for agent execution.
- * Currently wraps the single DSH instance, but designed to support
- * multiple agents in the future (Orchestrator + Workers pattern).
  */
 interface AgentManager {
-    /**
-     * Send a task to the agent.
-     * @return A task session ID for tracking status and results
-     */
     fun submitTask(taskId: String, prompt: String, context: Map<String, String>): String
-    
-    /**
-     * Get the current status of a task.
-     */
     fun getTaskStatus(taskId: String): TaskStatus
-    
-    /**
-     * Request cancellation of a running task.
-     */
     fun cancelTask(taskId: String): Boolean
-    
-    /**
-     * Internal health check (heartbeat).
-     * Returns true if the agent is responsive.
-     */
     fun isHealthy(): Boolean
-    
-    /**
-     * Get agent metadata (name, version, capabilities)
-     */
     fun getAgentInfo(): AgentInfo
 }
 
@@ -50,26 +27,77 @@ sealed class TaskStatus {
 }
 
 /**
- * Default implementation wrapping DeepSeek Harness.
- * In Multi-Agent mode, this would delegate to an Orchestrator.
+ * Mode selector for the agent system.
+ */
+enum class AgentMode {
+    /**
+     * Direct mode - one agent handles everything.
+     */
+    SIMPLE,
+    
+    /**
+     * Orchestrator mode - tasks are decomposed and distributed among workers.
+     */
+    AGENTIC
+}
+
+/**
+ * Central agent manager that can switch modes.
+ */
+class AgentManagerFactory(
+    private val config: SystemConfig
+) {
+    private var mode: AgentMode = AgentMode.SIMPLE
+    private var orchestrator: Orchestrator? = null
+    private var workerMonitor: WorkerMonitor? = null
+    private val baseManager = DeepSeekAgentManager()
+
+    fun setMode(newMode: AgentMode) {
+        mode = newMode
+        
+        when (newMode) {
+            AgentMode.SIMPLE -> {
+                orchestrator = null
+                workerMonitor = null
+            }
+            AgentMode.AGENTIC -> {
+                workerMonitor = WorkerMonitor(config)
+                orchestrator = Orchestrator(config, workerMonitor!!)
+                // Initialize with base manager as a worker
+                workerMonitor?.registerWorker("dsh_worker", baseManager)
+            }
+        }
+    }
+
+    fun getManagerForMode(mode: AgentMode): AgentManager {
+        return when (mode) {
+            AgentMode.SIMPLE -> baseManager
+            AgentMode.AGENTIC -> orchestrator ?: baseManager
+        }
+    }
+}
+
+/**
+ * Default implementation wrapping DeepSeek Harness (Simple Mode).
  */
 class DeepSeekAgentManager : AgentManager {
     private val bridge = DeepSeekHarnessBridge()
-    
+    private var activeTaskId: String? = null
+
     override fun submitTask(taskId: String, prompt: String, context: Map<String, String>): String {
-        // For now, the task ID is the request ID
+        activeTaskId = taskId
         bridge.execute(prompt, context)
         return taskId
     }
     
     override fun getTaskStatus(taskId: String): TaskStatus {
-        // DSH streams results, so we rely on callback-driven updates
-        // In a real implementation, this would check an internal task registry
         return TaskStatus.Idle
     }
     
     override fun cancelTask(taskId: String): Boolean {
-        bridge.cancelCurrentExecution()
+        if (activeTaskId == taskId) {
+            bridge.cancelCurrentExecution()
+        }
         return true
     }
     

@@ -17,6 +17,8 @@ import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.data.AppPreferences
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
+import com.jarves.mh.model.AgentManagerFactory
+import com.jarves.mh.model.AgentMode
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChatAttachment
@@ -222,6 +224,7 @@ data class AppUiState(
     val appUpdateDownloadedBytes: Long = 0L,
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
+    val agentMode: AgentMode = AgentMode.SIMPLE,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -257,6 +260,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             backgroundSetupComplete = preferences.backgroundSetupComplete,
             agentKind = initialAgentKind,
             primaryAgentKind = initialPrimaryAgentKind,
+            agentMode = AgentMode.SIMPLE,
             provider = preferences.loadProvider(vault, initialAgentKind),
             activeApiKeyName = vault.list(preferences.loadProvider(vault, initialAgentKind).kind.name)
                 .firstOrNull(ApiKeyInfo::isActive)?.name,
@@ -1250,6 +1254,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 apiPingStatus = ApiPingStatus.IDLE,
                 apiPingMessage = null,
             )
+        }
+    }
+
+    /** Switches between Single-Agent and Multi-Agent Orchestrator modes. */
+    fun switchAgentMode(newMode: AgentMode) {
+        if (_state.value.agentMode == newMode) return
+        if (_state.value.isRunning) {
+            _state.update { it.copy(toastMessage = "Stop current tasks before switching modes.") }
+            return
+        }
+        _state.update { current ->
+            current.copy(agentMode = newMode)
         }
     }
 
