@@ -93,6 +93,7 @@ import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Link
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,6 +108,7 @@ private fun LegacySettingsScreen(
     getSavedApiKey: (ProviderKind) -> String,
     onInstallDevStack: (DevStack) -> Unit = {},
     onSwitchMode: (AgentMode) -> Unit = {},
+    onNavigateToGitHub: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -316,6 +318,45 @@ private fun LegacySettingsScreen(
                             state.devStackMessage?.let { message ->
                                 Spacer(Modifier.height(10.dp))
                                 Text(message, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 2.5 INTEGRATIONS
+            // -------------------------------------------------------------
+            item {
+                SectionHeader(
+                    title = "Integrations",
+                    subtitle = "Connect external services",
+                    icon = Icons.Default.Link,
+                )
+                Spacer(Modifier.height(10.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(
+                            "Connect your external services to enable project management and code access.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text("GitHub", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Connect your GitHub account", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { onNavigateToGitHub() }) {
+                                Text("Manage")
                             }
                         }
                     }
@@ -892,4 +933,45 @@ private fun formatBytes(bytes: Long): String = when {
     bytes < 1_024 -> "$bytes B"
     bytes < 1_048_576 -> "%.1f KB".format(bytes / 1_024.0)
     else -> "%.1f MB".format(bytes / 1_048_576.0)
+}
+
+// Public SettingsScreen wrapper - delegates to LegacySettingsScreen
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    state: AppUiState,
+    onSaveProvider: (ProviderProfile, String) -> Unit,
+    onDiscoverModels: suspend (ProviderProfile, String) -> ModelDiscoveryResult,
+    onValidateProvider: suspend (ProviderProfile, String, List<DiscoveredModel>) -> ConnectionValidation,
+    onSetThemeMode: (AppThemeMode) -> Unit,
+    onPing: () -> Unit,
+    onClearTerminal: () -> Unit,
+    getSavedApiKey: (ProviderKind) -> String,
+    getSavedApiKeys: (ProviderKind) -> Map<String, String>,
+    onAddApiKey: (ProviderKind, String) -> Unit,
+    onActivateApiKey: (ProviderKind, String) -> Unit,
+    onRemoveApiKey: (ProviderKind, String) -> Unit,
+    onInstallDevStack: (DevStack) -> Unit = {},
+    onRemoveDevStack: (DevStack) -> Unit = {},
+    onInstallAgent: (AgentKind) -> Unit = {},
+    onCheckAgentUpdates: () -> Unit = {},
+    onUpdateAgent: (AgentKind) -> Unit = {},
+    initialDebugUpdateManifestUrl: String? = null,
+    onSetDebugUpdateManifestUrl: (String?) -> Unit = {},
+    onClearDebugUpdateManifestUrl: () -> Unit = {},
+    onNavigateToGitHub: () -> Unit = {},
+) {
+    LegacySettingsScreen(
+        state = state,
+        onSaveProvider = onSaveProvider,
+        onDiscoverModels = onDiscoverModels,
+        onValidateProvider = onValidateProvider,
+        onSetThemeMode = onSetThemeMode,
+        onPing = onPing,
+        onClearTerminal = onClearTerminal,
+        getSavedApiKey = getSavedApiKey,
+        onInstallDevStack = onInstallDevStack,
+        onSwitchMode = {},
+        onNavigateToGitHub = onNavigateToGitHub,
+    )
 }

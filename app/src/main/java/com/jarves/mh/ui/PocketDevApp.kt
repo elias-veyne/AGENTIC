@@ -221,6 +221,7 @@ import kotlinx.coroutines.launch
 
 
 import com.jarves.mh.ui.theme.AppThemeMode
+import com.jarves.mh.ui.GitHubConnectionScreen
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -229,6 +230,7 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
     PROJECTS("Projects", Icons.Default.Folder),
     AGENT("Agent", Icons.Default.SmartToy),
     SETTINGS("Settings", Icons.Default.Settings),
+    GITHUB("GitHub", Icons.Default.Link),
 }
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Default.AutoAwesome),
@@ -1994,6 +1996,11 @@ private fun RootScreenHost(
                     initialDebugUpdateManifestUrl = viewModel.debugUpdateManifestUrl(),
                     onSetDebugUpdateManifestUrl = viewModel::setDebugUpdateManifestUrl,
                     onClearDebugUpdateManifestUrl = viewModel::clearDebugUpdateManifestUrl,
+                    onNavigateToGitHub = { screen = RootScreen.GITHUB },
+                )
+                RootScreen.GITHUB -> GitHubConnectionScreen(
+                    onBack = { screen = RootScreen.SETTINGS },
+                    onConnectionChanged = { /* refresh state if needed */ },
                 )
             }
         }
