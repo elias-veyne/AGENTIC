@@ -181,7 +181,7 @@ data class AppUiState(
     val previewReady: Boolean = false,
     val previewUrl: String? = null,
     val isRunning: Boolean = false,
-    val activeSessionId: String? = null,
+    val agentSessions: Map<String, String> = emptyMap(),
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
     val projectTerminalLiveOutput: String = "",
@@ -287,11 +287,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch { dshRuntime.events.collect(::onRuntimeEvent) }
-        // Heartbeat polling for workers
+        // Heartbeat polling for active agents
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
-                delay(config.heartbeatIntervalSeconds * 1000)
-                workerMonitor.checkHealth()
+                delay(30000)
+                // Emit heartbeat for each active agent session
+                for (agentId in _state.value.agentSessions.keys) {
+                    agentSystem.recordHeartbeat(AgentId(agentId))
+                }
             }
         }
         if (!preferences.legacySeededCredentialRemoved) {
@@ -1723,7 +1726,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 androidProjectDetected = false,
                 filesLoading = false,
                 isRunning = false,
-                activeSessionId = null,
+                agentSessions = emptyMap(),
                 pendingApproval = null,
                 projectTerminalLines = emptyList(),
                 projectTerminalLiveOutput = "",
@@ -2814,23 +2817,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("</attached_files>")
         }
         failedApiKeyIds.clear()
-        activeRuntimeRequest = RuntimeRetryRequest(
-            runtime = activeRuntime(),
-            project = project,
-            prompt = runtimePrompt,
-            history = history,
-            provider = state.value.provider,
-        )
-        viewModelScope.launch {
-            activeRuntimeRequest?.let { request ->
-                request.runtime.startSession(
-                    request.project.id,
-                    request.project.slug,
-                    request.project.kind,
-                    request.prompt,
-                    request.history,
-                    request.provider,
+        when (state.value.agentMode) {
+            AgentMode.AGENTIC -> {
+                viewModelScope.launch {
+                    agentSystem.submitTask(requestText) { output ->
+                        _state.update { it.copy(toastMessage = "Task response: $output") }
+                    }
+                }
+            }
+            AgentMode.COOPERATIVE -> {
+                viewModelScope.launch {
+                    agentSystem.getCooperative().peerSync(AgentId.peer("peer1"), "context", runtimePrompt)
+                    agentSystem.getCooperative().peerSync(AgentId.peer("peer2"), "context", runtimePrompt)
+                    _state.update { it.copy(toastMessage = "Cooperative mode started") }
+                }
+            }
+            AgentMode.SIMPLE -> {
+                activeRuntimeRequest = RuntimeRetryRequest(
+                    runtime = activeRuntime(),
+                    project = project,
+                    prompt = runtimePrompt,
+                    history = history,
+                    provider = state.value.provider,
                 )
+                viewModelScope.launch {
+                    activeRuntimeRequest?.let { request ->
+                        request.runtime.startSession(
+                            request.project.id,
+                            request.project.slug,
+                            request.project.kind,
+                            request.prompt,
+                            request.history,
+                            request.provider,
+                        )
+                    }
+                }
             }
         }
     }
@@ -2842,7 +2863,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopTask() {
         if (!_state.value.isRunning) return
-        viewModelScope.launch { activeRuntime().stopActiveSession() }
+        viewModelScope.launch {
+            val sessions = _state.value.agentSessions.values.toList()
+            if (sessions.isNotEmpty()) {
+                for (sessionId in sessions) {
+                    dshRuntime.stopSession(sessionId)
+                }
+            } else {
+                dshRuntime.stopActiveSession()
+            }
+        }
     }
 
     fun undoLastChanges() {
@@ -2993,13 +3023,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { current ->
             if (!current.isRunning) {
                 current
-            } else if (current.activeSessionId != null && current.activeSessionId != event.sessionId) {
+            } else if (current.agentSessions.isNotEmpty() && event.sessionId !in current.agentSessions.values) {
                 current
             } else when (event) {
-                is RuntimeEvent.SessionStarted -> current.copy(
-                    activeSessionId = event.sessionId,
-                    activity = current.activity.mapIndexed { index, item -> if (index == 0) item.copy(isComplete = true) else item },
-                )
+                is RuntimeEvent.SessionStarted -> {
+                    val agentId = event.sessionId.split('-').lastOrNull() ?: "orchestrator"
+                    current.copy(
+                        agentSessions = current.agentSessions + (agentId to event.sessionId),
+                        activity = current.activity.mapIndexed { index, item -> if (index == 0) item.copy(isComplete = true) else item },
+                    )
+                }
                 is RuntimeEvent.AssistantDelta -> {
                     val timeline = if (current.liveThinking || current.liveProcess.any { !isNoisyRuntimeItem(it) }) {
                         finishWorkSegment(current)
@@ -3147,7 +3180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val finishedAt = System.currentTimeMillis()
                     attachTaskDuration(finishWorkSegment(current, finishedAt), finishedAt).copy(
                         isRunning = false,
-                        activeSessionId = null,
+                        agentSessions = emptyMap(),
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
@@ -3164,7 +3197,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         finishedAt,
                     ).copy(
                         isRunning = false,
-                        activeSessionId = null,
+                        agentSessions = emptyMap(),
                         pendingApproval = null,
                         toastMessage = event.reason.takeIf { reason ->
                             reason.contains("user not found", true) ||
@@ -3194,7 +3227,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
-        if (!current.isRunning || current.activeSessionId != event.sessionId) return false
+        if (!current.isRunning || event.sessionId !in current.agentSessions.values) return false
         if (!isApiKeyFailure(event.reason)) return false
         val request = activeRuntimeRequest ?: return false
         val credentials = vault.credentials(request.provider.kind.name)
@@ -3204,7 +3237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!vault.activate(request.provider.kind.name, next.id)) return false
         _state.update {
             it.copy(
-                activeSessionId = null,
+                agentSessions = emptyMap(),
                 activeApiKeyName = next.name,
                 toastMessage = "${active.name} failed. Switched to ${next.name}.",
                 liveProcess = it.liveProcess + ActivityItem("API key switched", "Using ${next.name}", true),
@@ -3253,7 +3286,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             val startedAt = current.workSegmentStartedAtMillis ?: current.taskStartedAtMillis ?: System.currentTimeMillis()
             current.messages + ChatMessage(
-                id = "interrupted-${current.activeSessionId ?: chatId}",
+                id = "interrupted-${current.agentSessions.values.firstOrNull() ?: chatId}",
                 fromUser = false,
                 text = "",
                 workItems = liveItems.map { it.copy(isComplete = true) } + ActivityItem(
