@@ -15,10 +15,9 @@ import com.jarves.mh.BuildConfig
 import com.jarves.mh.data.ApiKeyVault
 import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.data.AppPreferences
+import com.jarves.mh.agent.AgentMode
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
-import com.jarves.mh.model.AgentManagerFactory
-import com.jarves.mh.model.AgentMode
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChatAttachment
@@ -232,12 +231,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
     private val installer = RuntimeInstaller(application)
-    private val config = SystemConfig(heartbeatIntervalSeconds = 30, retryMaxAttempts = 5)
-    private val agentManagerFactory = AgentManagerFactory(config)
-    private val workerMonitor = WorkerMonitor(config)
-    private val orchestrator = Orchestrator(config, workerMonitor)
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
+    private val agentSystem = AgentSystem()
     private val providerApi = ProviderApiClient()
     private fun appUpdater(): AppUpdater = AppUpdater(
         getApplication(),
@@ -1268,27 +1264,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Switches between Single-Agent and Multi-Agent Orchestrator modes. */
+    /** Switches between Single-Agent, Multi-Agent Orchestrator, and Cooperative modes. */
     fun switchAgentMode(newMode: AgentMode) {
         if (_state.value.agentMode == newMode) return
         if (_state.value.isRunning) {
             _state.update { it.copy(toastMessage = "Stop current tasks before switching modes.") }
             return
         }
-        _state.update { current ->
-            current.copy(agentMode = newMode)
-        }
-        
-        // Initialize workers in Agentic mode
-        if (newMode == AgentMode.AGENTIC) {
-            agentManagerFactory.setMode(AgentMode.AGENTIC)
-            orchestrator.addTaskListener { taskId, result ->
-                // Task callback - update UI when task completes
-                _state.update { it.copy(toastMessage = "Task $taskId completed") }
-            }
-        } else {
-            agentManagerFactory.setMode(AgentMode.SIMPLE)
-        }
+        _state.update { it.copy(agentMode = newMode) }
     }
     /** Installs the other agent on demand (Settings) with live progress, then switches to it. */
     fun installAgent(kind: AgentKind) {

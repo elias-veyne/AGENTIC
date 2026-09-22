@@ -85,7 +85,7 @@ import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.model.AgentKind
-import com.jarves.mh.model.AgentMode
+import com.jarves.mh.agent.AgentMode
 import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
