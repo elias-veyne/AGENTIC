@@ -2827,7 +2827,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val store = agentSystem.getStore()
                     val workers = orch.getWorkers()
                     if (workers.isEmpty()) orch.registerWorker(AgentId.worker("ui"))
-                    val project = state.value.activeProject
                     val subtasks = orch.decompose(taskId, runtimePrompt)
                     val assigned = orch.assign(subtasks, orch.getWorkers())
 
