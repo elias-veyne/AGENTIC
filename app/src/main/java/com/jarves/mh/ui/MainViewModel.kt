@@ -2843,9 +2843,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             appendLine("Focus: ${if (st.subtaskId.startsWith("ui_")) "user-facing behavior and layout" else "data, persistence, and backend wiring"}")
                         }
                         val session = activeRuntime().startSession(
-                            project?.id ?: taskId,
-                            project?.slug ?: "agentic",
-                            project?.kind ?: com.jarves.mh.model.ProjectKind.PROJECT,
+                            project.id,
+                            project.slug,
+                            project.kind,
                             shard,
                             history,
                             state.value.provider,
@@ -2877,7 +2877,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val cooperative = agentSystem.getCooperative()
                     cooperative.peerSync(AgentId.peer("ui"), "context", runtimePrompt)
                     cooperative.peerSync(AgentId.peer("backend"), "context", runtimePrompt)
-                    val project = state.value.activeProject
                     activeRuntimeRequest = RuntimeRetryRequest(
                         runtime = activeRuntime(),
                         project = project,
