@@ -19,15 +19,15 @@ import androidx.compose.ui.unit.dp
 
 /** Pet/orb glow tint per agent state, mirroring the approved HTML demo. */
 object OrbTints {
-    const val IDLE = 0xFFA6E3A1
-    const val THINKING = 0xFFCBA6F7
-    const val SEARCHING = 0xFF89B4FA
-    const val CODING = 0xFF89B4FA
-    const val CONNECTING = 0xFFFAB387
-    const val COMPOSING = 0xFF94E2D5
-    const val AWAITING = 0xFFA69EFF
-    const val PEER = 0xFFA69EFF
-    const val PRIMARY = 0xFF54CCFF
+    const val IDLE = 0xFFA6E3A1.toInt()
+    const val THINKING = 0xFFCBA6F7.toInt()
+    const val SEARCHING = 0xFF89B4FA.toInt()
+    const val CODING = 0xFF89B4FA.toInt()
+    const val CONNECTING = 0xFFFAB387.toInt()
+    const val COMPOSING = 0xFF94E2D5.toInt()
+    const val AWAITING = 0xFFA69EFF.toInt()
+    const val PEER = 0xFFA69EFF.toInt()
+    const val PRIMARY = 0xFF54CCFF.toInt()
 
     fun forState(state: OrbState): Int = when (state) {
         OrbState.BREATHING -> IDLE

@@ -43,20 +43,20 @@ internal enum class OrbMode {
     }
 }
 
-internal enum class OrbState {
+enum class OrbState {
     WORKING, SEARCHING, SOLVING, LISTENING,
     CONNECTING, WEAVING, COMPOSING, BREATHING, SHAPING
 }
 
-private fun lerp(a: Float, b: Float, f: Float) = a + (b - a) * f
-private fun frac(x: Float) = x - floor(x)
+internal fun radiusScale(size: Float, pow: Float): Float =
+    Math.pow((size / 300f).toDouble(), pow.toDouble()).toFloat()
 
-private fun hashD(a: Float, b: Float): Float {
+internal fun hashD(a: Float, b: Float): Float {
     val h = sin(a * 12.9898f + b * 78.233f) * 43758.5453f
     return h - floor(h)
 }
 
-private fun vnoise(x: Float, y: Float): Float {
+internal fun vnoise(x: Float, y: Float): Float {
     val xi = floor(x); val yi = floor(y)
     var fx = x - xi; var fy = y - yi
     fx = fx * fx * (3 - 2 * fx)
@@ -68,7 +68,10 @@ private fun vnoise(x: Float, y: Float): Float {
     return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy
 }
 
-private fun fibDir(i: Int, n: Int): FloatArray {
+internal fun lerp(a: Float, b: Float, f: Float) = a + (b - a) * f
+internal fun frac(x: Float) = x - floor(x)
+
+internal fun fibDir(i: Int, n: Int): FloatArray {
     val golden = (PI * (3 - sqrt(5.0))).toFloat()
     val y = 1f - 2f * (i + 0.5f) / n
     val rad = sqrt(1 - y * y)
@@ -108,9 +111,7 @@ private fun inkColor(w: Float, alpha: Float, dark: Boolean, tint: Int?): Int {
     return (ai shl 24) or (r shl 16) or (g shl 8) or b
 }
 
-private fun radiusScale(size: Float, pow: Float) = (size / 300f).pow(pow)
-
-private fun finalizeFrame(dots: MutableList<OrbDot>, lines: MutableList<OrbLine>, rMin: Float): OrbFrame {
+internal fun finalizeFrame(dots: MutableList<OrbDot>, lines: MutableList<OrbLine>, rMin: Float): OrbFrame {
     val visible = dots.filter { it.a >= 0.02f }.map { it.copy(r = maxOf(rMin, it.r)) }
         .sortedBy { it.z }
     return OrbFrame(visible, lines.filter { it.a >= 0.02f })
