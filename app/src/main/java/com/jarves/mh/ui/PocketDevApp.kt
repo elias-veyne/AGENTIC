@@ -3771,7 +3771,7 @@ private fun WorkspaceScreen(
         },
         bottomBar = {
             if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                WorkspaceTab.entries.filter { it != WorkspaceTab.CHANGES && it != WorkspaceTab.TERMINAL }.forEach { tab ->
+                WorkspaceTab.entries.filter { it != WorkspaceTab.CHANGES }.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,
                         onClick = {
