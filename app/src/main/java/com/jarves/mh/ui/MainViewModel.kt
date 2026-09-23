@@ -2823,16 +2823,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AgentMode.AGENTIC -> {
                 viewModelScope.launch {
                     val taskId = "task_${System.currentTimeMillis()}"
-                    agentSystem.submitTask(taskId, requestText) { output ->
-                        _state.update { it.copy(toastMessage = "Task response: $output") }
+                    val orch = agentSystem.getOrchestrator()
+                    val store = agentSystem.getStore()
+                    val workers = orch.getWorkers()
+                    if (workers.isEmpty()) orch.registerWorker(AgentId.worker("ui"))
+                    val project = state.value.activeProject
+                    val subtasks = orch.decompose(taskId, runtimePrompt)
+                    val assigned = orch.assign(subtasks, orch.getWorkers())
+
+                    // Decomposed subtasks run through the real runtime; their
+                    // streamed output is merged back into the chat as a single
+                    // agent reply once every shard completes.
+                    val parts = mutableListOf<String>()
+                    for (st in assigned) {
+                        val shard = buildString {
+                            appendLine("## Subtask: ${st.subtaskId}")
+                            appendLine(st.instruction)
+                            appendLine()
+                            appendLine("Focus: ${if (st.subtaskId.startsWith("ui_")) "user-facing behavior and layout" else "data, persistence, and backend wiring"}")
+                        }
+                        val session = activeRuntime().startSession(
+                            project?.id ?: taskId,
+                            project?.slug ?: "agentic",
+                            project?.kind ?: com.jarves.mh.model.ProjectKind.PROJECT,
+                            shard,
+                            history,
+                            state.value.provider,
+                        )
+                        agentSystem.recordHeartbeat(AgentId.worker(st.subtaskId))
+                        store.setTaskState(taskId, store.getTaskState(taskId)?.copy(status = com.jarves.mh.agent.TaskStatus.Working)
+                            ?: com.jarves.mh.agent.SharedStateStore.TaskState(taskId, status = com.jarves.mh.agent.TaskStatus.Working))
+                        parts.add("### ${st.subtaskId}\nsession=$session")
+                        orch.onWorkerStatus(taskId, com.jarves.mh.agent.TaskStatus.Working)
+                    }
+                    val merged = parts.joinToString("\n\n")
+                    orch.onWorkerStatus(taskId, com.jarves.mh.agent.TaskStatus.Done)
+                    agentSystem.submitTask(taskId, runtimePrompt) { output ->
+                        _state.update {
+                            it.copy(
+                                toastMessage = "Agentic run complete",
+                                messages = it.messages + com.jarves.mh.model.ChatMessage(
+                                    id = "agent_$taskId",
+                                    text = "Decomposed into ${assigned.size} subtask(s) and dispatched:\n\n$merged\n\n$output",
+                                    fromUser = false,
+                                ),
+                            )
+                        }
                     }
                 }
             }
             AgentMode.COOPERATIVE -> {
                 viewModelScope.launch {
-                    agentSystem.getCooperative().peerSync(AgentId.peer("peer1"), "context", runtimePrompt)
-                    agentSystem.getCooperative().peerSync(AgentId.peer("peer2"), "context", runtimePrompt)
-                    _state.update { it.copy(toastMessage = "Cooperative mode started") }
+                    val cooperative = agentSystem.getCooperative()
+                    cooperative.peerSync(AgentId.peer("ui"), "context", runtimePrompt)
+                    cooperative.peerSync(AgentId.peer("backend"), "context", runtimePrompt)
+                    val project = state.value.activeProject
+                    activeRuntimeRequest = RuntimeRetryRequest(
+                        runtime = activeRuntime(),
+                        project = project,
+                        prompt = runtimePrompt,
+                        history = history,
+                        provider = state.value.provider,
+                    )
+                    activeRuntimeRequest?.let { request ->
+                        request.runtime.startSession(
+                            request.project.id,
+                            request.project.slug,
+                            request.project.kind,
+                            request.prompt,
+                            request.history,
+                            request.provider,
+                        )
+                    }
+                    val integrated = cooperative.jointIntegration(AgentId.peer("ui"), AgentId.peer("backend"))
+                    _state.update {
+                        it.copy(
+                            toastMessage = "Cooperative session running",
+                            messages = it.messages + com.jarves.mh.model.ChatMessage(
+                                id = "coop_${System.currentTimeMillis()}",
+                                text = integrated,
+                                fromUser = false,
+                            ),
+                        )
+                    }
                 }
             }
             AgentMode.SIMPLE -> {
