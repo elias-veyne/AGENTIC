@@ -93,6 +93,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Key
@@ -228,15 +229,14 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
 
 private enum class RootScreen(val label: String, val icon: ImageVector) {
-    PROJECTS("Projects", Icons.Default.Folder),
-    AGENT("Agent", Icons.Default.SmartToy),
+    PROJECTS("Home", Icons.Default.Home),
+    AGENT("API Keys", Icons.Default.Key),
     SETTINGS("Settings", Icons.Default.Settings),
     GITHUB("GitHub", Icons.Default.Link),
 }
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Default.AutoAwesome),
     FILES("Files", Icons.Default.Folder),
-    TERMINAL("Terminal", Icons.Default.Terminal),
     CHANGES("Changes", Icons.Default.Code),
     PREVIEW("Preview", Icons.Default.Preview),
 }
@@ -1907,7 +1907,7 @@ private fun RootScreenHost(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                RootScreen.entries.forEach { tab ->
+                RootScreen.entries.filter { it != RootScreen.GITHUB }.forEach { tab ->
                     NavigationBarItem(
                         selected = screen == tab,
                         onClick = { screen = tab },
@@ -2856,7 +2856,7 @@ private fun ProjectsScreen(
         topBar = {
             TopAppBar(
                 modifier = Modifier.padding(top = 8.dp),
-                title = { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(compact = true); Spacer(Modifier.width(9.dp)); Text("Mobile Harness", fontWeight = FontWeight.Bold) } },
+                title = { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(compact = true); Spacer(Modifier.width(9.dp)); Text("Agentic", fontWeight = FontWeight.Bold) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -2868,8 +2868,8 @@ private fun ProjectsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("Build from your phone", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Chat, review changes, and preview your project.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Recent Chats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("Projects and chats, all in one place.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3771,13 +3771,12 @@ private fun WorkspaceScreen(
         },
         bottomBar = {
             if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                WorkspaceTab.entries.filter { it != WorkspaceTab.CHANGES }.forEach { tab ->
+                WorkspaceTab.entries.filter { it != WorkspaceTab.CHANGES && it != WorkspaceTab.TERMINAL }.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,
                         onClick = {
                             selectedTab = tab
                             if (tab == WorkspaceTab.FILES) onRefreshFiles()
-                            if (tab == WorkspaceTab.TERMINAL) onTerminalOpened()
                         },
                         icon = { Icon(tab.icon, tab.label) },
                         label = { Text(tab.label, fontSize = 10.sp) },
@@ -3813,7 +3812,6 @@ private fun WorkspaceScreen(
                     onRemoveAttachment = onRemoveAttachment,
                     onOpenAttachment = onOpenAttachment,
                     onRunInTerminal = { command ->
-                        selectedTab = WorkspaceTab.TERMINAL
                         onTerminalOpened()
                         onTerminalPrepare(command)
                     },
@@ -3828,27 +3826,6 @@ private fun WorkspaceScreen(
                     onExport = {
                         exportProjectLauncher.launch("${state.activeProject?.slug ?: "project"}.zip")
                     },
-                )
-                WorkspaceTab.TERMINAL -> TerminalScreen(
-                    lines = state.projectTerminalLines,
-                    isRunning = state.projectTerminalRunning,
-                    onRun = onTerminalRun,
-                    onInput = onTerminalInput,
-                    onInterrupt = onTerminalInterrupt,
-                    onClear = onTerminalClear,
-                    onToggleTheme = {},
-                    themeMode = state.themeMode,
-                    title = "Project Terminal",
-                    subtitle = "${state.projectTerminalCwd} · Ubuntu PRoot",
-                    liveOutput = state.projectTerminalLiveOutput,
-                    currentCommand = state.projectTerminalCommand,
-                    commandDraft = state.projectTerminalDraft,
-                    onCommandDraftConsumed = onTerminalDraftConsumed,
-                    promptPath = state.projectTerminalCwd,
-                    onStop = onTerminalStop,
-                    showThemeAction = false,
-                    showQuickCommands = false,
-                    compactHeader = true,
                 )
                 WorkspaceTab.CHANGES -> ChangesTab(
                     state.changes,
