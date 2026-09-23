@@ -93,6 +93,8 @@ internal class Proj(yaw: Float, tilt: Float, val cx: Float, val cy: Float, val s
         val z2 = y * st + z1 * ct
         return floatArrayOf(cx + x1 * scale, cy - y1 * scale, z2)
     }
+
+    operator fun invoke(x: Float, y: Float, z: Float) = project(x, y, z)
 }
 
 private fun inkColor(w: Float, alpha: Float, dark: Boolean, tint: Int?): Int {
