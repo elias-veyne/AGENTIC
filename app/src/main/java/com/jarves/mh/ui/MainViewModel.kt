@@ -15,7 +15,9 @@ import com.jarves.mh.BuildConfig
 import com.jarves.mh.data.ApiKeyVault
 import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.data.AppPreferences
+import com.jarves.mh.agent.AgentId
 import com.jarves.mh.agent.AgentMode
+import com.jarves.mh.agent.AgentSystem
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
@@ -2820,7 +2822,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (state.value.agentMode) {
             AgentMode.AGENTIC -> {
                 viewModelScope.launch {
-                    agentSystem.submitTask(requestText) { output ->
+                    val taskId = "task_${System.currentTimeMillis()}"
+                    agentSystem.submitTask(taskId, requestText) { output ->
                         _state.update { it.copy(toastMessage = "Task response: $output") }
                     }
                 }

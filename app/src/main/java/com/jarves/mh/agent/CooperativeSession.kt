@@ -13,8 +13,8 @@ class CooperativeSession(
     }
 
     suspend fun jointIntegration(peerA: AgentId, peerB: AgentId): String {
-        val contextA = store.getContext("$peerA.context", "") ?: ""
-        val contextB = store.getContext("$peerB.context", "") ?: ""
+        val contextA = store.getContext("$peerA.context") ?: ""
+        val contextB = store.getContext("$peerB.context") ?: ""
         return "Integrated from $peerA: $contextA and $peerB: $contextB"
     }
 }

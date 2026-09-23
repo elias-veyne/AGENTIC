@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.CropRotate
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
@@ -59,6 +60,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -81,6 +83,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
@@ -711,6 +714,7 @@ private fun LegacySettingsScreen(
                             value = when (state.agentMode) {
                                 AgentMode.SIMPLE -> "Single Agent"
                                 AgentMode.AGENTIC -> "Multi-Agent Orchestrator"
+                                AgentMode.COOPERATIVE -> "Cooperative Peers"
                             },
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -727,7 +731,8 @@ private fun LegacySettingsScreen(
                                 onSwitchMode(
                                     when (state.agentMode) {
                                         AgentMode.SIMPLE -> AgentMode.AGENTIC
-                                        AgentMode.AGENTIC -> AgentMode.SIMPLE
+                                        AgentMode.AGENTIC -> AgentMode.COOPERATIVE
+                                        AgentMode.COOPERATIVE -> AgentMode.SIMPLE
                                     }
                                 )
                             },
@@ -746,6 +751,7 @@ private fun LegacySettingsScreen(
                                 when (state.agentMode) {
                                     AgentMode.SIMPLE -> "Single Agent"
                                     AgentMode.AGENTIC -> "Multi-Agent Orchestrator"
+                                    AgentMode.COOPERATIVE -> "Cooperative Peers"
                                 },
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
@@ -947,8 +953,8 @@ fun SettingsScreen(
     onPing: () -> Unit,
     onClearTerminal: () -> Unit,
     getSavedApiKey: (ProviderKind) -> String,
-    getSavedApiKeys: (ProviderKind) -> Map<String, String>,
-    onAddApiKey: (ProviderKind, String) -> Unit,
+    getSavedApiKeys: (ProviderKind) -> List<ApiKeyInfo>,
+    onAddApiKey: (ProviderKind, String, String) -> List<ApiKeyInfo>,
     onActivateApiKey: (ProviderKind, String) -> Unit,
     onRemoveApiKey: (ProviderKind, String) -> Unit,
     onInstallDevStack: (DevStack) -> Unit = {},
@@ -957,7 +963,7 @@ fun SettingsScreen(
     onCheckAgentUpdates: () -> Unit = {},
     onUpdateAgent: (AgentKind) -> Unit = {},
     initialDebugUpdateManifestUrl: String? = null,
-    onSetDebugUpdateManifestUrl: (String?) -> Unit = {},
+    onSetDebugUpdateManifestUrl: (String) -> Unit = {},
     onClearDebugUpdateManifestUrl: () -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {

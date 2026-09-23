@@ -3,6 +3,8 @@ package com.jarves.mh.integrations
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
@@ -176,6 +178,44 @@ class GitHubService(private val context: Context) {
         }
     }
 
+    private fun apiArrayCall(endpoint: String, method: String = "GET", body: JSONObject? = null): Result<JSONArray> {
+        return try {
+            val token = loadToken().getOrNull() ?: return Result.failure(Exception("No token stored"))
+            val url = "$BASE_URL$endpoint"
+
+            val connection = java.net.URL(url).openConnection() as HttpsURLConnection
+            connection.requestMethod = method
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+            connection.setRequestProperty("User-Agent", "AGentic-Android")
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+
+            if (body != null) {
+                connection.doOutput = true
+                connection.outputStream.use { it.write(body.toString().toByteArray()) }
+            }
+
+            val responseCode = connection.responseCode
+            val inputStream: InputStream = if (responseCode >= 200 && responseCode < 300) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+
+            val response = inputStream.bufferedReader().use { it.readText() }
+            inputStream.close()
+
+            if (responseCode >= 400) {
+                Result.failure(Exception("GitHub API error: $response"))
+            } else {
+                Result.success(JSONArray(response))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     /**
      * Get authenticated user info
      */
@@ -196,7 +236,7 @@ class GitHubService(private val context: Context) {
      * List repositories for authenticated user
      */
     fun listRepositories(page: Int = 1, perPage: Int = 30): Result<List<GitHubRepo>> {
-        return apiCall("/user/repos?page=$page&per_page=$perPage").map { json ->
+        return apiArrayCall("/user/repos?page=$page&per_page=$perPage").map { json ->
             val repos = mutableListOf<GitHubRepo>()
             for (i in 0 until json.length()) {
                 val repo = json.getJSONObject(i)
@@ -241,7 +281,7 @@ class GitHubService(private val context: Context) {
      * List issues for a repository
      */
     fun listIssues(fullName: String, state: String = "open", page: Int = 1): Result<List<GitHubIssue>> {
-        return apiCall("/repos/$fullName/issues?state=$state&page=$page").map { json ->
+        return apiArrayCall("/repos/$fullName/issues?state=$state&page=$page").map { json ->
             val issues = mutableListOf<GitHubIssue>()
             for (i in 0 until json.length()) {
                 val issue = json.getJSONObject(i)
@@ -288,7 +328,7 @@ class GitHubService(private val context: Context) {
      * List recent commits for a repository
      */
     fun listCommits(fullName: String, sha: String = "main", page: Int = 1): Result<List<GitHubCommit>> {
-        return apiCall("/repos/$fullName/commits?sha=$sha&page=$page").map { json ->
+        return apiArrayCall("/repos/$fullName/commits?sha=$sha&page=$page").map { json ->
             val commits = mutableListOf<GitHubCommit>()
             for (i in 0 until json.length()) {
                 val commit = json.getJSONObject(i)

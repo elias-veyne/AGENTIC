@@ -12,8 +12,8 @@ class AgentSystem {
     private val runtime = AgentRuntime(bus, store)
     private val orchestrator = Orchestrator(bus, store, config)
     private val cooperative = CooperativeSession(bus, store)
-    private val events = MutableSharedFlow<AgentEvent>(extraBufferCapacity = 50)
-    val events: Flow<AgentEvent> = events.asSharedFlow()
+    private val _events = MutableSharedFlow<AgentEvent>(extraBufferCapacity = 50)
+    val events: Flow<AgentEvent> = _events.asSharedFlow()
 
     fun getOrchestrator(): Orchestrator = orchestrator
     fun getCooperative(): CooperativeSession = cooperative
@@ -22,11 +22,11 @@ class AgentSystem {
 
     suspend fun startAgent(agentId: AgentId) {
         store.setAgentState(agentId, AgentState(agentId))
-        events.emit(AgentEvent.AgentStarted(agentId))
+        _events.emit(AgentEvent.AgentStarted(agentId))
     }
 
     suspend fun stopAgent(agentId: AgentId) {
-        events.emit(AgentEvent.AgentStopped(agentId))
+        _events.emit(AgentEvent.AgentStopped(agentId))
     }
 
     suspend fun recordHeartbeat(agentId: AgentId) {
@@ -34,14 +34,14 @@ class AgentSystem {
     }
 
     suspend fun submitTask(taskId: String, instruction: String, onOutput: suspend (String) -> Unit) {
-        events.emit(AgentEvent.TaskSubmitted(taskId))
+        _events.emit(AgentEvent.TaskSubmitted(taskId))
         val output = runtime.execute(taskId, instruction) { }
-        events.emit(AgentEvent.TaskCompleted(taskId, output))
+        _events.emit(AgentEvent.TaskCompleted(taskId, output))
         onOutput(output)
     }
 
     suspend fun continueTask(taskId: String, checkpoint: String) {
-        events.emit(AgentEvent.TaskResumed(taskId, checkpoint))
+        _events.emit(AgentEvent.TaskResumed(taskId, checkpoint))
     }
 
     suspend fun reportMismatch(taskId: String, contract: String) {
