@@ -214,6 +214,8 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
+import com.jarves.mh.ui.orbs.OrbPet
+import com.jarves.mh.ui.orbs.OrbState
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
@@ -2856,7 +2858,18 @@ private fun ProjectsScreen(
         topBar = {
             TopAppBar(
                 modifier = Modifier.padding(top = 8.dp),
-                title = { Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(compact = true); Spacer(Modifier.width(9.dp)); Text("Agentic", fontWeight = FontWeight.Bold) } },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BrandMark(compact = true)
+                        Spacer(Modifier.width(7.dp))
+                        Text("Agentic", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        OrbPet(
+                            state = OrbState.BREATHING,
+                            modifier = Modifier.size(width = 26.dp, height = 30.dp),
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -4194,10 +4207,18 @@ private fun ChatTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(messages, key = { it.id }) { message ->
+                    val isLastAgentMessage = !message.fromUser &&
+                        messages.lastOrNull { !it.fromUser }?.id == message.id
                     if (message.workItems.isNotEmpty()) {
                         WorkBlockCard(message)
                     } else {
-                        MessageBubble(message, onRunInTerminal, onOpenAttachment)
+                        MessageBubble(
+                            message,
+                            onRunInTerminal,
+                            onOpenAttachment,
+                            showPet = isLastAgentMessage,
+                            thinkingActive = thinkingActive,
+                        )
                     }
                 }
                 if (liveProcess.isNotEmpty() || thinkingActive) {
@@ -4753,7 +4774,13 @@ private fun formatDuration(totalSeconds: Long): String = when {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, onRunInTerminal: (String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
+private fun MessageBubble(
+    message: ChatMessage,
+    onRunInTerminal: (String) -> Unit,
+    onOpenAttachment: (ChatAttachment) -> Unit,
+    showPet: Boolean = false,
+    thinkingActive: Boolean = false,
+) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         Surface(
             color = if (message.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
@@ -4797,6 +4824,17 @@ private fun MessageBubble(message: ChatMessage, onRunInTerminal: (String) -> Uni
                     }
                 }
                 Spacer(Modifier.height(4.dp))
+            }
+            if (showPet) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 10.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    OrbPet(
+                        state = if (thinkingActive) OrbState.SOLVING else OrbState.BREATHING,
+                        modifier = Modifier.size(width = 48.dp, height = 54.dp),
+                    )
+                }
             }
         }
     }
