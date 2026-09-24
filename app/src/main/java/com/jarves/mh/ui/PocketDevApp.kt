@@ -216,6 +216,10 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.theme.Glass
+import com.jarves.mh.ui.theme.GlassBackground
+import com.jarves.mh.ui.theme.GlassCard
+import com.jarves.mh.ui.theme.GlassIconTile
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
@@ -1905,25 +1909,30 @@ private fun RootScreenHost(
     val terminalLiveOutput by viewModel.terminalLiveOutput.collectAsStateWithLifecycle()
     val terminalCurrentCommand by viewModel.terminalCurrentCommand.collectAsStateWithLifecycle()
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (!keyboardVisible) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                RootScreen.entries.filter { it != RootScreen.GITHUB }.forEach { tab ->
-                    NavigationBarItem(
-                        selected = screen == tab,
-                        onClick = { screen = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label, fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        ),
-                    )
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (!keyboardVisible) NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
+                    RootScreen.entries.filter { it != RootScreen.GITHUB }.forEach { tab ->
+                        NavigationBarItem(
+                            selected = screen == tab,
+                            onClick = { screen = tab },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label, fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Glass.Primary,
+                                selectedTextColor = Glass.Primary,
+                                indicatorColor = Glass.Primary.copy(alpha = 0.16f),
+                                unselectedIconColor = Glass.TextMuted,
+                                unselectedTextColor = Glass.TextMuted,
+                            ),
+                        )
+                    }
                 }
-            }
-        },
+            },
         floatingActionButton = {
             if (screen == RootScreen.PROJECTS && !keyboardVisible && !showQuickTerminal) {
                 ExtendedFloatingActionButton(
@@ -2007,6 +2016,7 @@ private fun RootScreenHost(
                 )
             }
         }
+    }
     }
     if (showQuickTerminal) {
         QuickTerminalSheet(
@@ -2815,6 +2825,113 @@ private fun ProviderCredentialsStep(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = Glass.TextMuted,
+        letterSpacing = 0.8.sp,
+        modifier = Modifier.padding(start = 4.dp, bottom = 9.dp),
+    )
+}
+
+@Composable
+private fun StatCard(
+    modifier: Modifier = Modifier,
+    halo: Glass.Halo,
+    tint1: Color,
+    tint2: Color,
+    icon: ImageVector,
+    title: String,
+    value: String,
+    change: String? = null,
+    changeDown: Boolean = false,
+) {
+    GlassCard(
+        modifier = modifier,
+        halo = halo,
+        onClick = null,
+    ) {
+        Column(Modifier.padding(13.dp, 12.dp)) {
+            GlassIconTile(tint1 = tint1, tint2 = tint2) {
+                Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(title, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = Glass.TextMuted)
+            Text(value, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = Glass.Text)
+            if (change != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (changeDown) Icons.Default.South else Icons.Default.North,
+                        contentDescription = null,
+                        tint = if (changeDown) Glass.Warn else Glass.Ok,
+                        modifier = Modifier.size(12.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        change,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (changeDown) Glass.Warn else Glass.Ok,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    modifier: Modifier = Modifier,
+    halo: Glass.Halo,
+    tint1: Color,
+    tint2: Color,
+    icon: ImageVector,
+    title: String,
+    onClick: () -> Unit,
+) {
+    GlassCard(
+        modifier = modifier,
+        halo = halo,
+        onClick = onClick,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(13.dp, 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            GlassIconTile(tint1 = tint1, tint2 = tint2) {
+                Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
+            }
+            Spacer(Modifier.height(9.dp))
+            Text(title, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = Glass.TextMuted)
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, on: Boolean) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(99.dp))
+            .background(if (on) Glass.Ok.copy(alpha = 0.16f) else Glass.Primary.copy(alpha = 0.12f))
+            .border(1.dp, if (on) Glass.Ok.copy(alpha = 0.4f) else Glass.Primary.copy(alpha = 0.3f), RoundedCornerShape(99.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(if (on) Glass.Ok else Glass.Primary),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (on) Glass.Ok else Glass.Primary)
+        }
+    }
+}
+
 private fun ProjectsScreen(
     state: AppUiState,
     listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
@@ -2881,8 +2998,114 @@ private fun ProjectsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("Recent Chats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("Projects and chats, all in one place.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Recent Chats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Glass.Text)
+                Text("Projects and chats, all in one place.", color = Glass.TextMuted)
+                Spacer(Modifier.height(16.dp))
+
+                // Overview stat grid, matching the approved demo.
+                SectionLabel("Overview")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        halo = Glass.BlueHalo,
+                        tint1 = Color(0x3D54CCFF),
+                        tint2 = Color(0x1A54CCFF),
+                        icon = Icons.Default.Chat,
+                        title = "Sessions",
+                        value = state.projects.size.toString(),
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        halo = Glass.VioletHalo,
+                        tint1 = Color(0x3D7C6CFF),
+                        tint2 = Color(0x1A7C6CFF),
+                        icon = Icons.Default.SmartToy,
+                        title = "Active Agents",
+                        value = if (state.isRunning) "1" else "0",
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        halo = Glass.TealHalo,
+                        tint1 = Color(0x3D4CC2A8),
+                        tint2 = Color(0x1A54CCFF),
+                        icon = Icons.Default.Bolt,
+                        title = "Tokens",
+                        value = "48k",
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+
+                // GitHub connect card from the approved demo.
+                SectionLabel("Account")
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    halo = Glass.VioletHalo,
+                    onClick = { showGitHubDialog = true },
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GlassIconTile(
+                            tint1 = Color(0x2954CCFF),
+                            tint2 = Color(0x1A7C6CFF),
+                        ) {
+                            Icon(Icons.Default.Code, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("GitHub", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Glass.Text)
+                            Text(
+                                if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) "Connected" else "Connect account →",
+                                fontSize = 11.5.sp,
+                                color = Glass.TextMuted,
+                            )
+                        }
+                        StatusPill(
+                            text = if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) "Connected" else "Connect",
+                            on = state.githubAuthStatus == GitHubAuthStatus.CONNECTED,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                // Quick actions from the approved demo.
+                SectionLabel("Quick Actions")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        halo = Glass.BlueHalo,
+                        tint1 = Color(0x3D54CCFF),
+                        tint2 = Color(0x1F7C6CFF),
+                        icon = Icons.Default.Add,
+                        title = "New Chat",
+                        onClick = onCreateQuickProject,
+                    )
+                    QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        halo = Glass.VioletHalo,
+                        tint1 = Color(0x3D7C6CFF),
+                        tint2 = Color(0x1A7C6CFF),
+                        icon = Icons.Default.History,
+                        title = "History",
+                        onClick = { /* scroll to recent chats */ },
+                    )
+                    QuickActionCard(
+                        modifier = Modifier.weight(1f),
+                        halo = Glass.TealHalo,
+                        tint1 = Color(0x3D4CC2A8),
+                        tint2 = Color(0x1A54CCFF),
+                        icon = Icons.Default.Group,
+                        title = "Cooperate",
+                        onClick = { /* switch to cooperative mode */ },
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
