@@ -57,13 +57,13 @@ object Glass {
 
     /** Two-stop radial halo that sits behind a card, tinted per-accent. */
     data class Halo(
-        val g1: Color = Color(0x4D54CCFF),   // primary at ~30%
-        val g2: Color = 0x387C6CFF,         // violet at ~22%
+        val g1: Color = Color(0x4D54CCFF.toInt()),   // primary at ~30%
+        val g2: Color = Color(0x387C6CFF.toInt()),   // violet at ~22%
     )
 
     val BlueHalo = Halo()
-    val VioletHalo = Halo(g1 = 0x4D7C6CFF, g2 = 0x3854CCFF)
-    val TealHalo = Halo(g1 = 0x4D4CC2A8, g2 = 0x3854CCFF)
+    val VioletHalo = Halo(g1 = Color(0x4D7C6CFF.toInt()), g2 = Color(0x3854CCFF.toInt()))
+    val TealHalo = Halo(g1 = Color(0x4D4CC2A8.toInt()), g2 = Color(0x3854CCFF.toInt()))
 }
 
 /**
