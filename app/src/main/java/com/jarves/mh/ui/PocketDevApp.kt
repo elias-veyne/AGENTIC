@@ -96,6 +96,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.North
+import androidx.compose.material.icons.filled.South
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
@@ -159,6 +161,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -2825,7 +2828,6 @@ private fun ProviderCredentialsStep(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Composable
 private fun SectionLabel(text: String) {
     Text(
         text,
@@ -2932,6 +2934,8 @@ private fun StatusPill(text: String, on: Boolean) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun ProjectsScreen(
     state: AppUiState,
     listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },

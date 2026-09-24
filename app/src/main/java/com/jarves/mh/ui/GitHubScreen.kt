@@ -164,7 +164,7 @@ fun GitHubConnectionScreen(
                     code = deviceCode,
                     copiedField = copiedField,
                     onCopy = { text, label ->
-    context.setText(AnnotatedString(text))
+        clipboard.setText(AnnotatedString(text))
                         copiedField = label
                         scope.launch {
                             delay(1200)
