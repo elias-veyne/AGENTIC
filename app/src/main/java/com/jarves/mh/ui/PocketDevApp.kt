@@ -4557,14 +4557,10 @@ private fun ChatTab(
 
                 val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
 
-                Surface(
-                    shape = RoundedCornerShape(26.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (canSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
-                    ),
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
+                    halo = if (canSend) Glass.BlueHalo else Glass.Halo(g1 = Color(0x297C6CFF.toInt()), g2 = Color(0x1A54CCFF.toInt())),
+                    radius = 26.dp,
                 ) {
                     Row(
                         modifier = Modifier
@@ -5011,10 +5007,10 @@ private fun MessageBubble(
     thinkingActive: Boolean = false,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
-        Surface(
-            color = if (message.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(18.dp),
+        GlassCard(
             modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
+            halo = if (message.fromUser) Glass.BlueHalo else Glass.Halo(g1 = Color(0x297C6CFF.toInt()), g2 = Color(0x1A54CCFF.toInt())),
+            radius = 18.dp,
         ) {
             Column(Modifier.padding(top = 12.dp)) {
                 SelectionContainer {
