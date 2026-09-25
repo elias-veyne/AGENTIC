@@ -317,6 +317,19 @@ data class ProjectChat(
     val updatedAtMillis: Long = System.currentTimeMillis(),
 )
 
+/**
+ * One row of the Home "Recent Chats" list: a real chat lifted out of its project
+ * with the latest agent text as a preview, so Home can surface work directly.
+ */
+data class RecentChat(
+    val projectId: String,
+    val chatId: String,
+    val title: String,
+    val preview: String,
+    val updatedAtMillis: Long,
+    val agentMode: com.jarves.mh.agent.AgentMode = com.jarves.mh.agent.AgentMode.SIMPLE,
+)
+
 enum class DiffLineType { CONTEXT, ADDITION, DELETION, INFO }
 
 data class DiffLine(

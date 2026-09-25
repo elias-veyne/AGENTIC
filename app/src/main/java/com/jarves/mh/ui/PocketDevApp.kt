@@ -1926,6 +1926,23 @@ private fun StartupErrorScreen(
 
 private fun formatMegabytes(bytes: Long): String = "%.1f MB".format(bytes / 1_048_576.0)
 
+private fun formatRelativeTime(millis: Long): String {
+    val minutes = (System.currentTimeMillis() - millis) / 60_000
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        minutes < 60 * 24 -> "${minutes / 60}h"
+        minutes < 60 * 24 * 7 -> "${minutes / (60 * 24)}d"
+        else -> "${minutes / (60 * 24 * 7)}w"
+    }
+}
+
+private fun formatTokens(tokens: Long): String = when {
+    tokens >= 1_000_000 -> "%.1fM".format(tokens / 1_000_000.0)
+    tokens >= 1_000 -> "%.0fk".format(tokens / 1_000.0)
+    else -> tokens.toString()
+}
+
 /** Notification permission is granted at runtime (API 33+) or by channel enablement. */
 private fun Context.notificationsGranted(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -3094,7 +3111,7 @@ private fun ProjectsScreen(
                         tint2 = Color(0x1A54CCFF),
                         icon = Icons.Default.Chat,
                         title = "Sessions",
-                        value = state.projects.size.toString(),
+                        value = state.totalChats.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
@@ -3103,7 +3120,7 @@ private fun ProjectsScreen(
                         tint2 = Color(0x1A7C6CFF),
                         icon = Icons.Default.SmartToy,
                         title = "Active Agents",
-                        value = if (state.isRunning) "1" else "0",
+                        value = state.agentSessions.size.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
@@ -3112,7 +3129,7 @@ private fun ProjectsScreen(
                         tint2 = Color(0x1A54CCFF),
                         icon = Icons.Default.Bolt,
                         title = "Tokens",
-                        value = "48k",
+                        value = formatTokens(state.cumulativeTokens),
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -3344,6 +3361,38 @@ private fun ProjectsScreen(
                         }
                     }
                 }
+            }
+            if (state.recentChats.isNotEmpty()) {
+                item { Text("Recent chats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+                items(state.recentChats, key = { it.chatId }) { chat ->
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        halo = Glass.BlueHalo,
+                        onClick = { onOpen(state.projects.first { it.id == chat.projectId }) },
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            GlassIconTile(tint1 = Color(0x2954CCFF), tint2 = Color(0x1A7C6CFF)) {
+                                Icon(Icons.Default.Chat, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(chat.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Glass.Text, maxLines = 1)
+                                Text(
+                                    chat.preview,
+                                    fontSize = 11.5.sp,
+                                    color = Glass.TextMuted,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                            }
+                            Text(formatRelativeTime(chat.updatedAtMillis), fontSize = 10.sp, color = Glass.TextMuted)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
             }
             item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             if (projects.isEmpty()) {

@@ -27,6 +27,7 @@ import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.Project
 import com.jarves.mh.model.ProjectKind
 import com.jarves.mh.model.ProjectChat
+import com.jarves.mh.model.RecentChat
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.model.RuntimeEvent
@@ -227,6 +228,12 @@ data class AppUiState(
     val appUpdateError: String? = null,
     val agentMode: AgentMode = AgentMode.SIMPLE,
     val accentColor: Int = 0xFF54CCFF.toInt(),
+    /** Total chats across every project, for the Home "Sessions" stat. */
+    val totalChats: Int = 0,
+    /** Cumulative estimated tokens across all sessions, for the Home "Tokens" stat. */
+    val cumulativeTokens: Long = 0L,
+    /** Home's Recent Chats list, derived from persisted chats across projects. */
+    val recentChats: List<RecentChat> = emptyList(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -266,6 +273,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             agentMode = runCatching { AgentMode.valueOf(preferences.agentMode.uppercase()) }
                 .getOrDefault(AgentMode.SIMPLE),
             accentColor = preferences.accentColor,
+            totalChats = preferences.loadProjects().sumOf { preferences.loadProjectChats(it.id).size },
+            cumulativeTokens = preferences.cumulativeTokens,
+            recentChats = loadRecentChats(),
             provider = preferences.loadProvider(vault, initialAgentKind),
             activeApiKeyName = vault.list(preferences.loadProvider(vault, initialAgentKind).kind.name)
                 .firstOrNull(ApiKeyInfo::isActive)?.name,
@@ -1246,6 +1256,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateProvider(profile: ProviderProfile, secret: String) = finishOnboarding(profile, secret)
+
+/** Builds the Home Recent Chats list from every persisted project's chats. */
+    private fun loadRecentChats(): List<RecentChat> {
+        return preferences.loadProjects().flatMap { project ->
+            preferences.loadProjectChats(project.id).mapNotNull { chat ->
+                val messages = preferences.loadMessages(project.id, chat.id)
+                val lastAgent = messages.lastOrNull { !it.fromUser }
+                RecentChat(
+                    projectId = project.id,
+                    chatId = chat.id,
+                    title = chat.title.ifBlank { project.name },
+                    preview = lastAgent?.text?.take(90)?.replace("\n", " ")?.ifBlank { "No replies yet" }
+                        ?: "No replies yet",
+                    updatedAtMillis = chat.updatedAtMillis,
+                )
+            }
+        }.sortedByDescending { it.updatedAtMillis }.take(6)
+    }
 
     /** Completes onboarding without a stored key (the demo's "I'll do this later"). */
     fun finishOnboardingWithoutKey() {
@@ -3137,7 +3165,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is RuntimeEvent.ReasoningProgress -> {
                     if (event.estimatedTokens > 0) {
-                        preferences.cumulativeTokens = preferences.cumulativeTokens + event.estimatedTokens
+                        val updated = preferences.cumulativeTokens + event.estimatedTokens
+                        preferences.cumulativeTokens = updated
+                        _state.update { it.copy(cumulativeTokens = updated) }
                     }
                     val existingIndex = current.liveProcess.indexOfLast { it.title == "Think" }
                     // The request-level Think summary is seeded once in sendPrompt.
@@ -3366,6 +3396,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(projects = updatedProjects, activeProject = active)
         }
         preferences.saveProjects(_state.value.projects)
+        refreshRecentChats()
+    }
+
+    private fun refreshRecentChats() {
+        _state.update { it.copy(recentChats = loadRecentChats(), totalChats = it.totalChats) }
     }
 
     private fun persistMessages(includeLiveProcess: Boolean = true) {
