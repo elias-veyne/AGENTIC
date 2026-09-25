@@ -36,8 +36,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Compile Kotlin (debug)
-        run: ./gradlew :app:compileDebugKotlin --no-daemon --stacktrace
+      - name: Compile Kotlin (online debug)
+        run: ./gradlew :app:compileOnlineDebugKotlin --no-daemon --stacktrace
 
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
+        run: ./gradlew :app:testOnlineDebugUnitTest --no-daemon
