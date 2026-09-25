@@ -226,6 +226,7 @@ data class AppUiState(
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
     val agentMode: AgentMode = AgentMode.SIMPLE,
+    val accentColor: Int = 0xFF54CCFF.toInt(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -262,7 +263,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             backgroundSetupComplete = preferences.backgroundSetupComplete,
             agentKind = initialAgentKind,
             primaryAgentKind = initialPrimaryAgentKind,
-            agentMode = AgentMode.SIMPLE,
+            agentMode = runCatching { AgentMode.valueOf(preferences.agentMode.uppercase()) }
+                .getOrDefault(AgentMode.SIMPLE),
+            accentColor = preferences.accentColor,
             provider = preferences.loadProvider(vault, initialAgentKind),
             activeApiKeyName = vault.list(preferences.loadProvider(vault, initialAgentKind).kind.name)
                 .firstOrNull(ApiKeyInfo::isActive)?.name,
@@ -883,6 +886,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(themeMode = mode) }
     }
 
+    fun setAccentColor(argb: Int) {
+        preferences.accentColor = argb
+        _state.update { it.copy(accentColor = argb) }
+    }
+
     fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()
 
     fun getSavedApiKeys(kind: ProviderKind): List<ApiKeyInfo> = vault.list(kind.name)
@@ -1276,6 +1284,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(toastMessage = "Stop current tasks before switching modes.") }
             return
         }
+        preferences.agentMode = newMode.name
         _state.update { it.copy(agentMode = newMode) }
     }
     /** Installs the other agent on demand (Settings) with live progress, then switches to it. */
@@ -3121,6 +3130,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 is RuntimeEvent.ReasoningProgress -> {
+                    if (event.estimatedTokens > 0) {
+                        preferences.cumulativeTokens = preferences.cumulativeTokens + event.estimatedTokens
+                    }
                     val existingIndex = current.liveProcess.indexOfLast { it.title == "Think" }
                     // The request-level Think summary is seeded once in sendPrompt.
                     // After that segment has been committed to the timeline, later
