@@ -26,6 +26,7 @@ object OrbTints {
     const val CONNECTING = 0xFFFAB387.toInt()
     const val COMPOSING = 0xFF94E2D5.toInt()
     const val AWAITING = 0xFFA69EFF.toInt()
+    const val WEAVING = 0xFFF5C2E7.toInt()
     const val PEER = 0xFFA69EFF.toInt()
     const val PRIMARY = 0xFF54CCFF.toInt()
 
@@ -37,7 +38,7 @@ object OrbTints {
         OrbState.CONNECTING -> CONNECTING
         OrbState.COMPOSING -> COMPOSING
         OrbState.LISTENING -> AWAITING
-        OrbState.WEAVING -> THINKING
+        OrbState.WEAVING -> WEAVING
         OrbState.SHAPING -> PRIMARY
     }
 }
@@ -106,4 +107,33 @@ private fun inkColor(w: Float, alpha: Float, dark: Boolean, tint: Int): Int {
     }
     val ai = (alpha.coerceIn(0f, 1f) * 255).toInt()
     return (ai shl 24) or (r shl 16) or (g shl 8) or b
+}
+
+
+/**
+ * Derives the pet state from live agent activity, mirroring the demo's
+ * STATE_TO_ORB mapping so the orb reflects what the agent is actually doing.
+ *
+ * Idle when nothing is running; otherwise the most recent in-flight activity
+ * item wins, falling back to [SOLVING] while pure reasoning is streaming.
+ */
+fun orbStateForActivity(
+    thinkingActive: Boolean,
+    liveProcess: List<com.jarves.mh.model.ActivityItem>,
+    isRunning: Boolean,
+): OrbState {
+    if (!isRunning) return OrbState.BREATHING
+    val active = liveProcess.lastOrNull { !it.isComplete }
+    if (active == null) return if (thinkingActive) OrbState.SOLVING else OrbState.BREATHING
+    val title = active.title.lowercase()
+    val detail = active.detail.lowercase()
+    return when {
+        active.isCommand || title.startsWith("running") || title.contains("completed") -> OrbState.WORKING
+        title.contains("search") || detail.contains("search") || detail.contains("grep") -> OrbState.SEARCHING
+        title.contains("connect") || detail.contains("connect") || detail.contains("auth") -> OrbState.CONNECTING
+        title.contains("preview") || title.contains("compos") || detail.contains("compos") -> OrbState.COMPOSING
+        title.contains("files changed") || detail.contains("edit") || detail.contains("writ") -> OrbState.WEAVING
+        title == "think" -> OrbState.SOLVING
+        else -> OrbState.SOLVING
+    }
 }

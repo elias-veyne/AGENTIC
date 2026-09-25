@@ -221,6 +221,7 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.orbs.orbStateForActivity
 import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
 import com.jarves.mh.ui.theme.GlassCard
@@ -4447,6 +4448,8 @@ private fun ChatTab(
                             onOpenAttachment,
                             showPet = isLastAgentMessage,
                             thinkingActive = thinkingActive,
+                            liveProcess = liveProcess,
+                            isRunning = isRunning,
                         )
                     }
                 }
@@ -5005,6 +5008,8 @@ private fun MessageBubble(
     onOpenAttachment: (ChatAttachment) -> Unit,
     showPet: Boolean = false,
     thinkingActive: Boolean = false,
+    liveProcess: List<ActivityItem> = emptyList(),
+    isRunning: Boolean = false,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         GlassCard(
@@ -5056,7 +5061,7 @@ private fun MessageBubble(
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     OrbPet(
-                        state = if (thinkingActive) OrbState.SOLVING else OrbState.BREATHING,
+                        state = orbStateForActivity(thinkingActive, liveProcess, isRunning),
                         modifier = Modifier.size(width = 48.dp, height = 54.dp),
                     )
                 }
