@@ -4,6 +4,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.fillMaxSize
 import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
@@ -256,7 +259,7 @@ private fun ProviderStep(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
             providers.forEach { kind ->
-                ChoiceRow(Icons.Default.SmartToy, kind.displayName, kind.description, picked == kind) { picked = kind }
+                ChoiceRow(Icons.Default.SmartToy, kind.title, kind.subtitle, picked == kind) { picked = kind }
             }
         }
         if (picked != null) {
@@ -278,6 +281,7 @@ private fun GitHubStep(
     onConnect: () -> Unit,
     onSkip: () -> Unit,
     githubLogin: String?,
+    githubUserCode: String? = null,
 ) {
     OnboardingScaffold(
         step = 2,

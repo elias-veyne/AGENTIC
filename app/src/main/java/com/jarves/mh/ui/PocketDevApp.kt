@@ -190,6 +190,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.agent.AgentMode
+import com.jarves.mh.ui.chat.ModePills
 import com.jarves.mh.ui.chat.PeerGrid
 import com.jarves.mh.ui.chat.PeerStatus
 import com.jarves.mh.ui.chat.PlanCard
@@ -271,6 +272,8 @@ private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
 fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val batteryOptimizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     val projectsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -386,11 +389,11 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
                 onConnectGitHub = viewModel::startGitHubLogin,
                 githubLogin = state.githubLogin,
                 githubUserCode = state.githubUserCode,
-                notificationsAllowed = { appContext.notificationsGranted() },
-                batteryUnrestricted = { appContext.batteryUnrestricted() },
-                onRequestNotifications = { requestNotifications(appContext, notificationPermissionLauncher) },
-                onRequestBattery = { requestBatteryExemption(appContext, batteryOptimizationLauncher) },
-                onPrepareWorkspace = { prepareOnboardingWorkspace(appContext) },
+                notificationsAllowed = { context.notificationsGranted() },
+                batteryUnrestricted = { context.batteryUnrestricted() },
+                onRequestNotifications = { requestNotifications(context, notificationPermissionLauncher) },
+                onRequestBattery = { requestBatteryExemption(context, batteryOptimizationLauncher) },
+                onPrepareWorkspace = { prepareOnboardingWorkspace(context) },
                 onSetupComplete = viewModel::finishOnboardingWithoutKey,
             )
         else -> RootScreenHost(state, viewModel, projectsListState)
@@ -2014,9 +2017,6 @@ private fun RootScreenHost(
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val appContext = LocalContext.current
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val batteryOptimizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     val terminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
     val isTerminalRunning by viewModel.isTerminalRunning.collectAsStateWithLifecycle()
     val terminalLiveOutput by viewModel.terminalLiveOutput.collectAsStateWithLifecycle()
