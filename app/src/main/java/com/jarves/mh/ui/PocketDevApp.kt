@@ -1944,6 +1944,7 @@ private fun peerDetail(items: List<ActivityItem>, peer: String): String =
         ?: items.lastOrNull()?.detail
         ?: "$peer peer standby"
 
+private fun formatRelativeTime(millis: Long): String {
     val minutes = (System.currentTimeMillis() - millis) / 60_000
     return when {
         minutes < 1 -> "now"

@@ -203,7 +203,7 @@ private fun ModeStep(
         title = "Choose how Agentic works",
         subtitle = "You can switch this any time from the composer.",
         actions = {
-            PrimaryButton("Continue") { onChoose(picked) }
+            PrimaryButton(text = "Continue") { onChoose(picked) }
             TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) { Text("Skip", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         },
     ) {
@@ -268,7 +268,7 @@ private fun GitHubStep(
         title = "Connect GitHub",
         subtitle = "Let agents read and modify your repositories. Device-flow OAuth — the key never leaves your device.",
         actions = {
-            PrimaryButton(if (githubLogin != null) "Connected — Continue" else "Connect GitHub") { onConnect() }
+            PrimaryButton(text = if (githubLogin != null) "Connected — Continue" else "Connect GitHub") { onConnect() }
             TextButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) { Text("Later", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         },
     ) {
@@ -348,13 +348,14 @@ private fun SetupStep(
         subtitle = "A few system permissions so agents can notify you and keep working in the background.",
         actions = {
             PrimaryButton(
-                if (running) "Finishing…" else "Start using Agentic",
+                text = if (running) "Finishing…" else "Start using Agentic",
                 enabled = !running,
-            ) {
-                notifDone = notificationsAllowed()
-                batteryDone = batteryUnrestricted()
-                if (notifDone && batteryDone) onSetupComplete()
-            },
+                onClick = {
+                    notifDone = notificationsAllowed()
+                    batteryDone = batteryUnrestricted()
+                    if (notifDone && batteryDone) onSetupComplete()
+                },
+            ),
         },
     ) {
         SetupRow(Icons.Default.Notifications, "Notifications", "Alerts when long tasks finish or need approval.", notifDone, onRequestNotifications)
