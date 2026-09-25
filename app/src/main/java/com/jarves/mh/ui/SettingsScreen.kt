@@ -111,6 +111,7 @@ private fun LegacySettingsScreen(
     getSavedApiKey: (ProviderKind) -> String,
     onInstallDevStack: (DevStack) -> Unit = {},
     onSwitchMode: (AgentMode) -> Unit = {},
+    onSetAccentColor: (Int) -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -196,6 +197,8 @@ private fun LegacySettingsScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                Spacer(Modifier.height(10.dp))
+                AccentRow(selected = state.accentColor, onSelect = onSetAccentColor)
             }
 
             // -------------------------------------------------------------
@@ -980,4 +983,53 @@ fun SettingsScreen(
         onSwitchMode = {},
         onNavigateToGitHub = onNavigateToGitHub,
     )
+}
+
+/**
+ * The demo's 5-swatch accent picker. The chosen color drives glows and
+ * highlights throughout the app and persists across launches.
+ */
+@Composable
+private fun AccentRow(selected: Int, onSelect: (Int) -> Unit) {
+    val accents = listOf(
+        0xFF54CCFF.toInt() to "Cyan",
+        0xFF7C6CFF.toInt() to "Violet",
+        0xFF4CC2A8.toInt() to "Teal",
+        0xFFF5C2E7.toInt() to "Pink",
+        0xFFFAB387.toInt() to "Orange",
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text("Accent color", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
+            Text("Glows and highlights", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                accents.forEach { (color, _) ->
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(color))
+                            .border(
+                                2.dp,
+                                if (selected == color) MaterialTheme.colorScheme.onBackground else Color.Transparent,
+                                CircleShape,
+                            )
+                            .clickable { onSelect(color) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected == color) Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
 }
