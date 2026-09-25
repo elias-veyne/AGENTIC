@@ -375,7 +375,7 @@ private fun SetupStep(
                     batteryDone = batteryUnrestricted()
                     if (notifDone && batteryDone) onSetupComplete()
                 },
-            ),
+            )
         },
     ) {
         SetupRow(Icons.Default.Notifications, "Notifications", "Alerts when long tasks finish or need approval.", notifDone, onRequestNotifications)

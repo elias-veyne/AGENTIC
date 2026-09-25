@@ -207,6 +207,7 @@ import com.jarves.mh.model.DiffLineType
 import com.jarves.mh.model.Project
 import com.jarves.mh.model.ProjectKind
 import com.jarves.mh.model.ProjectChat
+import com.jarves.mh.model.RecentChat
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
@@ -3383,7 +3384,7 @@ private fun ProjectsScreen(
             }
             if (state.recentChats.isNotEmpty()) {
                 item { Text("Recent chats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-                items(state.recentChats, key = { it.chatId }) { chat ->
+                items(state.recentChats, key = { it.chatId }) { chat: RecentChat ->
                     GlassCard(
                         modifier = Modifier.fillMaxWidth(),
                         halo = Glass.BlueHalo,
