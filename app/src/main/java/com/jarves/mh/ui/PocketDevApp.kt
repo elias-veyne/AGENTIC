@@ -16,6 +16,10 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import com.jarves.mh.BuildConfig
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import java.io.File
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -199,6 +203,7 @@ import com.jarves.mh.model.ProjectKind
 import com.jarves.mh.model.ProjectChat
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
+import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
 import com.jarves.mh.model.inferredDshApiForUrl
 import com.jarves.mh.model.providersForAgent
 import com.jarves.mh.model.ToolRequest
@@ -221,6 +226,7 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.onboarding.DemoOnboarding
 import com.jarves.mh.ui.orbs.orbStateForActivity
 import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
@@ -246,6 +252,9 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
     SETTINGS("Settings", Icons.Default.Settings),
     GITHUB("GitHub", Icons.Default.Link),
 }
+
+/** Demo-aligned navigation: Home / API Keys / Settings as the bottom bar. */
+private val RootBottomTabs = listOf(RootScreen.PROJECTS, RootScreen.AGENT, RootScreen.SETTINGS)
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Default.AutoAwesome),
     FILES("Files", Icons.Default.Folder),
@@ -361,6 +370,23 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onOpenAttachment = viewModel::openChatAttachment,
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
         )
+        !state.onboardingComplete && state.startupStage == StartupStage.READY ->
+            DemoOnboarding(
+                initialMode = state.agentMode,
+                providers = DEEPSEEK_HARNESS_PROVIDERS.toList(),
+                onModeChosen = viewModel::switchAgentMode,
+                onProviderChosen = viewModel::updateProvider,
+                onSkipProvider = viewModel::finishOnboardingWithoutKey,
+                onConnectGitHub = viewModel::startGitHubLogin,
+                githubLogin = state.githubLogin,
+                githubUserCode = state.githubUserCode,
+                notificationsAllowed = { appContext.notificationsGranted() },
+                batteryUnrestricted = { appContext.batteryUnrestricted() },
+                onRequestNotifications = { requestNotifications(appContext, notificationPermissionLauncher) },
+                onRequestBattery = { requestBatteryExemption(appContext, batteryOptimizationLauncher) },
+                onPrepareWorkspace = { prepareOnboardingWorkspace(appContext) },
+                onSetupComplete = viewModel::finishOnboardingWithoutKey,
+            )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
 }
@@ -1900,6 +1926,49 @@ private fun StartupErrorScreen(
 
 private fun formatMegabytes(bytes: Long): String = "%.1f MB".format(bytes / 1_048_576.0)
 
+/** Notification permission is granted at runtime (API 33+) or by channel enablement. */
+private fun Context.notificationsGranted(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
+    }
+    return androidx.core.content.ContextCompat.checkSelfPermission(
+        this, Manifest.permission.POST_NOTIFICATIONS,
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun Context.batteryUnrestricted(): Boolean =
+    (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+
+private fun requestNotifications(
+    context: Context,
+    launcher: ActivityResultLauncher<String>,
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        RuntimeExecutionService.ensureNotificationChannels(context)
+        RuntimeSetupService.ensureNotificationChannel(context)
+        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+    }
+}
+
+private fun requestBatteryExemption(
+    context: Context,
+    launcher: ActivityResultLauncher<Intent>,
+) {
+    runCatching { launcher.launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }.onFailure {
+        launcher.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+    }
+}
+
+/** Ensures the agent workspace roots exist so the first session can start immediately. */
+private suspend fun prepareOnboardingWorkspace(context: Context) {
+    withContext(Dispatchers.IO) {
+        runCatching { File(context.filesDir, "workspace").mkdirs() }
+        runCatching { File(context.filesDir, "projects").mkdirs() }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RootScreenHost(
@@ -1910,6 +1979,9 @@ private fun RootScreenHost(
     var screen by rememberSaveable { mutableStateOf(RootScreen.PROJECTS) }
     var showQuickTerminal by rememberSaveable { mutableStateOf(false) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val appContext = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val batteryOptimizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     val terminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
     val isTerminalRunning by viewModel.isTerminalRunning.collectAsStateWithLifecycle()
     val terminalLiveOutput by viewModel.terminalLiveOutput.collectAsStateWithLifecycle()
@@ -1922,7 +1994,7 @@ private fun RootScreenHost(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (!keyboardVisible) NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
-                    RootScreen.entries.filter { it != RootScreen.GITHUB }.forEach { tab ->
+                    RootBottomTabs.forEach { tab ->
                         NavigationBarItem(
                             selected = screen == tab,
                             onClick = { screen = tab },

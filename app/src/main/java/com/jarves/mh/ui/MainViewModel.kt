@@ -1247,6 +1247,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateProvider(profile: ProviderProfile, secret: String) = finishOnboarding(profile, secret)
 
+    /** Completes onboarding without a stored key (the demo's "I'll do this later"). */
+    fun finishOnboardingWithoutKey() {
+        preferences.onboardingComplete = true
+        _state.update { it.copy(onboardingComplete = true, startupStage = StartupStage.READY) }
+    }
+
     fun finishBackgroundSetup() {
         preferences.backgroundSetupComplete = true
         _state.update { it.copy(backgroundSetupComplete = true) }
