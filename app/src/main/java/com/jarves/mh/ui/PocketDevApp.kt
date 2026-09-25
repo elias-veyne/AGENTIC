@@ -189,6 +189,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarves.mh.model.ActivityItem
+import com.jarves.mh.agent.AgentMode
+import com.jarves.mh.ui.chat.PeerGrid
+import com.jarves.mh.ui.chat.PeerStatus
+import com.jarves.mh.ui.chat.PlanCard
+import com.jarves.mh.ui.chat.SubtaskChip
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
@@ -344,6 +349,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onSend = viewModel::sendPrompt,
             onStop = viewModel::stopTask,
             onApproval = viewModel::answerApproval,
+            onSwitchMode = viewModel::switchAgentMode,
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
@@ -1926,7 +1932,18 @@ private fun StartupErrorScreen(
 
 private fun formatMegabytes(bytes: Long): String = "%.1f MB".format(bytes / 1_048_576.0)
 
-private fun formatRelativeTime(millis: Long): String {
+/** An in-flight activity item is a working subtask; a finished one is done. */
+private fun ActivityItem.toSubtaskChip(): SubtaskChip = SubtaskChip(
+    label = title,
+    done = isComplete,
+)
+
+/** Picks the most recent in-flight detail for a cooperative peer card. */
+private fun peerDetail(items: List<ActivityItem>, peer: String): String =
+    items.lastOrNull { !it.isComplete }?.detail
+        ?: items.lastOrNull()?.detail
+        ?: "$peer peer standby"
+
     val minutes = (System.currentTimeMillis() - millis) / 60_000
     return when {
         minutes < 1 -> "now"
@@ -3908,6 +3925,7 @@ private fun ReadOnlyProjectScreen(
                 taskFinishedAtMillis = null,
                 thinkingActive = false,
                 agentKind = state.agentKind,
+                agentMode = state.agentMode,
                 pendingAttachments = emptyList(),
                 onAttach = {},
                 onRemoveAttachment = {},
@@ -3929,6 +3947,7 @@ private fun WorkspaceScreen(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onApproval: (Boolean) -> Unit,
+    onSwitchMode: (AgentMode) -> Unit,
     onRefreshFiles: () -> Unit,
     onOpenFile: (WorkspaceEntry) -> Unit,
     onCloseFile: () -> Unit,
@@ -4169,6 +4188,8 @@ private fun WorkspaceScreen(
                     taskFinishedAtMillis = state.taskFinishedAtMillis,
                     thinkingActive = state.liveThinking,
                     agentKind = state.agentKind,
+                    agentMode = state.agentMode,
+                    onSwitchMode = onSwitchMode,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
@@ -4525,6 +4546,8 @@ private fun ChatTab(
     taskFinishedAtMillis: Long?,
     thinkingActive: Boolean,
     agentKind: AgentKind,
+    agentMode: AgentMode = AgentMode.SIMPLE,
+    onSwitchMode: (AgentMode) -> Unit = {},
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
@@ -4576,13 +4599,28 @@ private fun ChatTab(
                 }
                 if (liveProcess.isNotEmpty() || thinkingActive) {
                     item(key = "live-agent-process") {
-                        LiveAgentProcess(
-                            processItems = liveProcess,
-                            isRunning = isRunning,
-                            startedAtMillis = taskStartedAtMillis,
-                            finishedAtMillis = taskFinishedAtMillis,
-                            thinkingActive = thinkingActive,
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            when (agentMode) {
+                                AgentMode.AGENTIC -> {
+                                    val shards = liveProcess.map { it.toSubtaskChip() }
+                                    if (shards.isNotEmpty()) PlanCard(shards)
+                                }
+                                AgentMode.COOPERATIVE -> {
+                                    PeerGrid(
+                                        peerA = PeerStatus("UI peer", peerDetail(liveProcess, "UI")),
+                                        peerB = PeerStatus("Backend peer", peerDetail(liveProcess, "Backend")),
+                                    )
+                                }
+                                else -> {}
+                            }
+                            LiveAgentProcess(
+                                processItems = liveProcess,
+                                isRunning = isRunning,
+                                startedAtMillis = taskStartedAtMillis,
+                                finishedAtMillis = taskFinishedAtMillis,
+                                thinkingActive = thinkingActive,
+                            )
+                        }
                     }
                 }
                 approval?.let { request -> item { ApprovalCard(request, onApproval) } }
@@ -4661,6 +4699,7 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
+                ModePills(mode = agentMode, onSwitch = onSwitchMode, enabled = !isRunning)
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier
