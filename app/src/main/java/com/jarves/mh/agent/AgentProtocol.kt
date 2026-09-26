@@ -21,6 +21,8 @@ sealed class AgentMessage {
     object Heartbeat : AgentMessage()
     data class TaskComplete(val taskId: String, val output: String) : AgentMessage()
     data class TaskFailed(val taskId: String, val error: String) : AgentMessage()
+    /** V5: human-in-the-loop escalation when a shard exhausts retries. */
+    data class TaskEscalated(val taskId: String, val reason: String) : AgentMessage()
 }
 
 sealed class TaskStatus {

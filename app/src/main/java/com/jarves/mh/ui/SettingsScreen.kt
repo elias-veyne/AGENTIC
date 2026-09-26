@@ -59,6 +59,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -112,6 +114,9 @@ private fun LegacySettingsScreen(
     onInstallDevStack: (DevStack) -> Unit = {},
     onSwitchMode: (AgentMode) -> Unit = {},
     onSetAccentColor: (Int) -> Unit = {},
+    onSetNotifTaskAlerts: (Boolean) -> Unit = {},
+    onSetNotifApprovalRequests: (Boolean) -> Unit = {},
+    onSetNotifHeartbeatWarnings: (Boolean) -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -202,7 +207,50 @@ private fun LegacySettingsScreen(
             }
 
             // -------------------------------------------------------------
-            // 2. DEVELOPER TOOLS
+            // 2. NOTIFICATIONS
+            // -------------------------------------------------------------
+            item {
+                SectionHeader(
+                    title = "Notifications",
+                    subtitle = "Alerts for agent activity and edge cases",
+                    icon = Icons.Default.Visibility,
+                )
+                Spacer(Modifier.height(10.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        NotificationToggleRow(
+                            title = "Task alerts",
+                            subtitle = "When an agent starts, finishes, or hits a milestone",
+                            checked = state.notifTaskAlerts,
+                            onCheckedChange = onSetNotifTaskAlerts,
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        NotificationToggleRow(
+                            title = "Approval requests",
+                            subtitle = "When a tool needs your sign-off before running",
+                            checked = state.notifApprovalRequests,
+                            onCheckedChange = onSetNotifApprovalRequests,
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        NotificationToggleRow(
+                            title = "Heartbeat warnings",
+                            subtitle = "When a worker stalls and needs recovery or escalation",
+                            checked = state.notifHeartbeatWarnings,
+                            onCheckedChange = onSetNotifHeartbeatWarnings,
+                        )
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 3. DEVELOPER TOOLS
             // -------------------------------------------------------------
             item {
                 SectionHeader(
@@ -944,6 +992,35 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "%.1f MB".format(bytes / 1_048_576.0)
 }
 
+/** A Settings row with a title, subtitle, and an on/off Switch (demo parity). */
+@Composable
+private fun NotificationToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
+            Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
 // Public SettingsScreen wrapper - delegates to LegacySettingsScreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -970,6 +1047,9 @@ fun SettingsScreen(
     onClearDebugUpdateManifestUrl: () -> Unit = {},
     onSwitchMode: (AgentMode) -> Unit = {},
     onSetAccentColor: (Int) -> Unit = {},
+    onSetNotifTaskAlerts: (Boolean) -> Unit = {},
+    onSetNotifApprovalRequests: (Boolean) -> Unit = {},
+    onSetNotifHeartbeatWarnings: (Boolean) -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {
     LegacySettingsScreen(
@@ -984,6 +1064,9 @@ fun SettingsScreen(
         onInstallDevStack = onInstallDevStack,
         onSwitchMode = onSwitchMode,
         onSetAccentColor = onSetAccentColor,
+        onSetNotifTaskAlerts = onSetNotifTaskAlerts,
+        onSetNotifApprovalRequests = onSetNotifApprovalRequests,
+        onSetNotifHeartbeatWarnings = onSetNotifHeartbeatWarnings,
         onNavigateToGitHub = onNavigateToGitHub,
     )
 }

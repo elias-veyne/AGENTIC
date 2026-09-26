@@ -115,6 +115,19 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getLong("cumulative_tokens", 0L)
         set(value) { preferences.edit().putLong("cumulative_tokens", value).apply() }
 
+    /** Notification preferences surfaced in Settings → Notifications (demo parity). */
+    var notifTaskAlerts: Boolean
+        get() = preferences.getBoolean("notif_task_alerts", true)
+        set(value) { preferences.edit().putBoolean("notif_task_alerts", value).apply() }
+
+    var notifApprovalRequests: Boolean
+        get() = preferences.getBoolean("notif_approval_requests", true)
+        set(value) { preferences.edit().putBoolean("notif_approval_requests", value).apply() }
+
+    var notifHeartbeatWarnings: Boolean
+        get() = preferences.getBoolean("notif_heartbeat_warnings", true)
+        set(value) { preferences.edit().putBoolean("notif_heartbeat_warnings", value).apply() }
+
     /** Development stacks the user picked during onboarding (names of DevStack). */
     var selectedDevStacks: Set<String>
         get() {

@@ -72,6 +72,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
+import com.jarves.mh.agent.Decomposer
+import kotlin.text.Regex
+import com.jarves.mh.agent.TaskExecutor
+import com.jarves.mh.agent.TaskStatus
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -228,6 +237,10 @@ data class AppUiState(
     val appUpdateError: String? = null,
     val agentMode: AgentMode = AgentMode.SIMPLE,
     val accentColor: Int = 0xFF54CCFF.toInt(),
+    /** Notification toggles (Settings → Notifications). Defaults mirror the demo. */
+    val notifTaskAlerts: Boolean = true,
+    val notifApprovalRequests: Boolean = true,
+    val notifHeartbeatWarnings: Boolean = true,
     /** Total chats across every project, for the Home "Sessions" stat. */
     val totalChats: Int = 0,
     /** Cumulative estimated tokens across all sessions, for the Home "Tokens" stat. */
@@ -273,6 +286,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             agentMode = runCatching { AgentMode.valueOf(preferences.agentMode.uppercase()) }
                 .getOrDefault(AgentMode.SIMPLE),
             accentColor = preferences.accentColor,
+            notifTaskAlerts = preferences.notifTaskAlerts,
+            notifApprovalRequests = preferences.notifApprovalRequests,
+            notifHeartbeatWarnings = preferences.notifHeartbeatWarnings,
             totalChats = preferences.loadProjects().sumOf { preferences.loadProjectChats(it.id).size },
             cumulativeTokens = preferences.cumulativeTokens,
             recentChats = loadRecentChats(),
@@ -899,6 +915,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAccentColor(argb: Int) {
         preferences.accentColor = argb
         _state.update { it.copy(accentColor = argb) }
+    }
+
+    fun setNotifTaskAlerts(enabled: Boolean) {
+        preferences.notifTaskAlerts = enabled
+        _state.update { it.copy(notifTaskAlerts = enabled) }
+    }
+
+    fun setNotifApprovalRequests(enabled: Boolean) {
+        preferences.notifApprovalRequests = enabled
+        _state.update { it.copy(notifApprovalRequests = enabled) }
+    }
+
+    fun setNotifHeartbeatWarnings(enabled: Boolean) {
+        preferences.notifHeartbeatWarnings = enabled
+        _state.update { it.copy(notifHeartbeatWarnings = enabled) }
     }
 
     fun getSavedApiKey(kind: ProviderKind): String = vault.get(kind.name).orEmpty()
@@ -2866,52 +2897,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AgentMode.AGENTIC -> {
                 viewModelScope.launch {
                     val taskId = "task_${System.currentTimeMillis()}"
-                    val orch = agentSystem.getOrchestrator()
-                    val store = agentSystem.getStore()
-                    val workers = orch.getWorkers()
-                    if (workers.isEmpty()) orch.registerWorker(AgentId.worker("ui"))
-                    val subtasks = orch.decompose(taskId, runtimePrompt)
-                    val assigned = orch.assign(subtasks, orch.getWorkers())
+                    val runtime = activeRuntime()
 
-                    // Decomposed subtasks run through the real runtime; their
-                    // streamed output is merged back into the chat as a single
-                    // agent reply once every shard completes.
-                    val parts = mutableListOf<String>()
-                    for (st in assigned) {
-                        val shard = buildString {
-                            appendLine("## Subtask: ${st.subtaskId}")
-                            appendLine(st.instruction)
-                            appendLine()
-                            appendLine("Focus: ${if (st.subtaskId.startsWith("ui_")) "user-facing behavior and layout" else "data, persistence, and backend wiring"}")
-                        }
-                        val session = activeRuntime().startSession(
+                    // V3: LLM-driven decomposition — the model decides how to split the task.
+                    val decomposer = Decomposer { instruction ->
+                        val raw = runLLMDecompose(
+                            runtime,
                             project.id,
                             project.slug,
                             project.kind,
-                            shard,
+                            instruction,
                             history,
                             state.value.provider,
                         )
-                        agentSystem.recordHeartbeat(AgentId.worker(st.subtaskId))
-                        store.setTaskState(taskId, store.getTaskState(taskId)?.copy(status = com.jarves.mh.agent.TaskStatus.Working)
-                            ?: com.jarves.mh.agent.SharedStateStore.TaskState(taskId, status = com.jarves.mh.agent.TaskStatus.Working))
-                        parts.add("### ${st.subtaskId}\nsession=$session")
-                        orch.onWorkerStatus(taskId, com.jarves.mh.agent.TaskStatus.Working)
+                        parseLLMDecompose(raw)
                     }
-                    val merged = parts.joinToString("\n\n")
-                    orch.onWorkerStatus(taskId, com.jarves.mh.agent.TaskStatus.Done)
-                    agentSystem.submitTask(taskId, runtimePrompt) { output ->
+
+                    // Real executor: each shard runs its own PRoot session concurrently (V2).
+                    val executor = TaskExecutor { instruction ->
+                        agentSystem.recordHeartbeat(AgentId.worker("shard"))
+                        runRealShard(
+                            runtime,
+                            project.id,
+                            project.slug,
+                            project.kind,
+                            instruction,
+                            history,
+                            state.value.provider,
+                        )
+                    }
+
+                    agentSystem.runAgentic(taskId, runtimePrompt, onOutput = { output ->
                         _state.update {
                             it.copy(
                                 toastMessage = "Agentic run complete",
-                                messages = it.messages + com.jarves.mh.model.ChatMessage(
+                                messages = it.messages + ChatMessage(
                                     id = "agent_$taskId",
-                                    text = "Decomposed into ${assigned.size} subtask(s) and dispatched:\n\n$merged\n\n$output",
+                                    text = output,
                                     fromUser = false,
                                 ),
                             )
                         }
-                    }
+                    }, decomposer = decomposer, executor = executor)
                 }
             }
             AgentMode.COOPERATIVE -> {
@@ -3447,6 +3474,129 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences.saveProjectChats(project.id, _state.value.projectChats)
     }
 
+    /**
+     * Executes a single shard instruction against the live runtime, collecting streamed
+     * output until the session completes or times out after 5 minutes.
+     */
+    private suspend fun runRealShard(
+        runtime: DshRuntimeBridge,
+        projectId: String,
+        projectSlug: String,
+        projectKind: ProjectKind,
+        instruction: String,
+        history: List<ChatMessage>,
+        provider: ProviderProfile,
+    ): String {
+        val output = StringBuilder()
+        val done = CompletableDeferred<String>()
+        var sessionId: String? = null
+
+        val collector = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            runtime.events.collect { ev ->
+                when (ev) {
+                    is RuntimeEvent.AssistantDelta -> {
+                        if (ev.sessionId == sessionId) output.append(ev.text)
+                    }
+                    is RuntimeEvent.SessionCompleted -> {
+                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                    }
+                    is RuntimeEvent.SessionFailed -> {
+                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                    }
+                    else -> {}
+                }
+            }
+        }
+
+        sessionId = runtime.startSession(
+            projectId,
+            projectSlug,
+            projectKind,
+            instruction,
+            history,
+            provider,
+        )
+
+        val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
+        collector.cancel()
+        return result
+    }
+
+    /**
+     * V3: uses an LLM session to ask the model to decompose [instruction] into
+     * a list of focused subtasks. Returns the raw text response.
+     */
+    private suspend fun runLLMDecompose(
+        runtime: DshRuntimeBridge,
+        projectId: String,
+        projectSlug: String,
+        projectKind: ProjectKind,
+        instruction: String,
+        history: List<ChatMessage>,
+        provider: ProviderProfile,
+    ): String {
+        val output = StringBuilder()
+        val done = CompletableDeferred<String>()
+        var sessionId: String? = null
+
+        val collector = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            runtime.events.collect { ev ->
+                when (ev) {
+                    is RuntimeEvent.AssistantDelta -> {
+                        if (ev.sessionId == sessionId) output.append(ev.text)
+                    }
+                    is RuntimeEvent.SessionCompleted -> {
+                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                    }
+                    is RuntimeEvent.SessionFailed -> {
+                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                    }
+                    else -> {}
+                }
+            }
+        }
+
+        val decomposePrompt = buildString {
+            appendLine("You are a task decomposer. Break the following request into clear, parallelizable subtasks.")
+            appendLine("Respond ONLY with a JSON array of {id, instruction} objects. Example:")
+            appendLine("""[{ "id": "ui", "instruction": "Build the layout..." }, { "id": "backend", "instruction": "Build the API..." }]""")
+            appendLine()
+            appendLine("Request: $instruction")
+        }
+        sessionId = runtime.startSession(projectId, projectSlug, projectKind, decomposePrompt, history, provider)
+
+        val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
+        collector.cancel()
+        return result
+    }
+
+    /**
+     * V3: parses the LLM text response into [Decomposer.DecomposedChild] list.
+     * Falls back to the default 2-way split if parsing fails.
+     */
+    private fun parseLLMDecompose(raw: String): List<Decomposer.DecomposedChild> {
+        // Try JSON array parsing first.
+        val trimmed = raw.trim()
+        if (trimmed.startsWith("[")) {
+            try {
+                val result = mutableListOf<Decomposer.DecomposedChild>()
+                val content = trimmed.removePrefix("[").removeSuffix("]")
+                val items = content.split Regex("""\},\s*\{""")
+                for (item in items) {
+                    val clean = item.removePrefix("{").removeSuffix("}")
+                    val idMatch = Regex(""""id"\s*:\s*"([^"]+)"""").find(clean)
+                    val instrMatch = Regex(""""instruction"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(clean)
+                    if (idMatch != null && instrMatch != null) {
+                        result.add(Decomposer.DecomposedChild(idMatch.groupValues[1], instrMatch.groupValues[1]))
+                    }
+                }
+                if (result.isNotEmpty()) return result
+            } catch (_: Exception) { /* fall through */ }
+        }
+        // Fallback: default 2-way split.
+        return Decomposer.DecomposedChild.Default.decompose("")
+    }
+
     companion object {
         private const val MINIMUM_INITIALIZATION_SCREEN_MS = 3_000L
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
@@ -3462,5 +3612,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TEST_PROVIDER_DEFAULTS_VERSION = 1
         private const val TEST_OPENROUTER_BASE_URL = "https://openrouter.ai/api"
         private const val TEST_OPENROUTER_MODEL = "stealth/ox-alpha"
+        private val TASK_TIMEOUT = java.time.Duration.ofMinutes(5)
     }
 }
