@@ -1248,7 +1248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val message = if (isOffline) {
             "Connect to Wi-Fi or mobile data, then try again. Internet is required to finish the first-time setup."
         } else {
-            error.message?.take(300) ?: "Something went wrong while preparing Mobile Harness. Please try again."
+            error.message?.take(300) ?: "Something went wrong while preparing Agentic. Please try again."
         }
         _state.update {
             it.copy(

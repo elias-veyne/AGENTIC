@@ -885,7 +885,7 @@ private fun LegacySettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("Mobile Harness", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Agentic", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text("v1.0.0", color = PocketOrange, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         }
                         Text(

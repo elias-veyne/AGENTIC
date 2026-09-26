@@ -457,7 +457,7 @@ private fun BackgroundTaskSetupScreen(
     }
     val currentDescription = when (currentStep) {
         0 -> "See live progress and receive an alert when the agent finishes or needs your attention."
-        1 -> "Allow Mobile Harness to continue a task when you lock the phone or switch to another app."
+        1 -> "Allow Agentic to continue a task when you lock the phone or switch to another app."
         else -> "Keep the CPU awake only while a visible coding task is running, then release it automatically."
     }
     val currentPrivacyNote = when (currentStep) {
@@ -479,7 +479,7 @@ private fun BackgroundTaskSetupScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Mobile Harness", fontWeight = FontWeight.Bold)
+                        Text("Agentic", fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
@@ -505,7 +505,7 @@ private fun BackgroundTaskSetupScreen(
             Text("Prepare for reliable setup", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Setup time depends on the toolchains you choose next. You may leave Mobile Harness in the background while it works.",
+                "Setup time depends on the toolchains you choose next. You may leave Agentic in the background while it works.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -752,7 +752,7 @@ private fun RuntimeSetupPromptScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Mobile Harness", fontWeight = FontWeight.Bold)
+                        Text("Agentic", fontWeight = FontWeight.Bold)
                     }
                 },
                 navigationIcon = {
@@ -801,7 +801,7 @@ private fun RuntimeSetupPromptScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Your phone meets the requirements. Choose your coding tools next and Mobile Harness will handle the setup.",
+                    text = "Your phone meets the requirements. Choose your coding tools next and Agentic will handle the setup.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.5.sp,
                     lineHeight = 19.sp,
@@ -1080,7 +1080,7 @@ private fun RuntimeSetupPromptScreen(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = if (compatible) "Install Mobile Harness" else "Device not supported",
+                            text = if (compatible) "Install Agentic" else "Device not supported",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                         )
@@ -1389,7 +1389,7 @@ private fun RuntimeInstallationScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Set up Mobile Harness", fontWeight = FontWeight.Bold)
+                        Text("Set up Agentic", fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
@@ -1494,7 +1494,7 @@ private fun RuntimeInstallationScreen(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "You can leave Mobile Harness in the background and follow setup from the notification.",
+                "You can leave Agentic in the background and follow setup from the notification.",
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
@@ -1860,7 +1860,7 @@ private fun StartupErrorScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
-                        Text("Mobile Harness", fontWeight = FontWeight.Bold)
+                        Text("Agentic", fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
@@ -1883,7 +1883,7 @@ private fun StartupErrorScreen(
             Icon(Icons.Default.Warning, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(20.dp))
             Text(
-                if (isOffline) "You're offline" else "Mobile Harness couldn't finish starting",
+                if (isOffline) "You're offline" else "Agentic couldn't finish starting",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -2281,7 +2281,7 @@ private fun ProviderSetupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (onboarding) "Set up Mobile Harness" else "AI Provider & Settings") },
+                title = { Text(if (onboarding) "Set up Agentic" else "AI Provider & Settings") },
                 navigationIcon = {
                     if (handleBack != null) {
                         IconButton(onClick = handleBack) {
@@ -2421,7 +2421,7 @@ private fun DeviceCheckStep(context: Context, onContinue: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         BrandMark()
         Text("Your phone is the workspace", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Mobile Harness checks compatibility before downloading the private Linux runtime.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Agentic checks compatibility before downloading the private Linux runtime.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         CheckRow(Icons.Default.Memory, "Memory", "$totalRamLabel GB usable · ${if (totalRamGb >= 7.5) "Full mode" else "Lite mode"}", true)
         CheckRow(Icons.Default.Code, "Processor", Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown", arm64)
         CheckRow(Icons.Default.Storage, "Android", "Android ${Build.VERSION.RELEASE}", true)
@@ -2490,7 +2490,7 @@ private fun ProviderChoiceStep(
         Text("Connect your AI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Choose how Mobile Harness should access your coding model.",
+            "Choose how Agentic should access your coding model.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
         )
@@ -3377,7 +3377,7 @@ private fun ProjectsScreen(
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Mobile Harness ${update.versionName}", fontWeight = FontWeight.Bold)
+                                Text("Agentic ${update.versionName}", fontWeight = FontWeight.Bold)
                                 Text("A new update is ready", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text("Update", color = PocketOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -3642,14 +3642,14 @@ private fun ProjectsScreen(
             title = { Text("Update to ${update.versionName}", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(update.notes.ifBlank { "Get the latest improvements and fixes for Mobile Harness." })
+                    Text(update.notes.ifBlank { "Get the latest improvements and fixes for Agentic." })
                     if (update.sizeBytes > 0) Text("Download size: ${formatMegabytes(update.sizeBytes)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     if (!canInstall) {
                         Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
                                 Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Allow ‘Install unknown apps’ for Mobile Harness. Without this permission, Android will not install the update.", fontSize = 13.sp)
+                                Text("Allow ‘Install unknown apps’ for Agentic. Without this permission, Android will not install the update.", fontSize = 13.sp)
                             }
                         }
                     }
@@ -5352,7 +5352,7 @@ private fun ChangesTab(
                 }
             }
         }
-        if (changes.isEmpty()) item { EmptyState(Icons.Default.Code, "No changes yet", "Ask Mobile Harness to update your project.") }
+        if (changes.isEmpty()) item { EmptyState(Icons.Default.Code, "No changes yet", "Ask Agentic to update your project.") }
         items(changes, key = { it.path }) { change ->
             val expanded = expandedPath == change.path
             Card(Modifier.fillMaxWidth()) {
@@ -5635,7 +5635,7 @@ private fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false) {
     ) {
         Icon(
             imageVector = Icons.Default.Terminal,
-            contentDescription = "Mobile Harness",
+            contentDescription = "Agentic",
             modifier = Modifier.size(iconSize),
             tint = primary,
         )
