@@ -68,7 +68,7 @@ class OrbTintsTest {
     @Test
     fun searchMapsToSearching() {
         val process = listOf(
-            ActivityItem(title = "Running Grep", detail = "searching for usages", isComplete = false),
+            ActivityItem(title = "Grep", detail = "searching for usages", isComplete = false),
         )
         assertEquals(
             OrbState.SEARCHING,
