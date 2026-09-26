@@ -968,6 +968,8 @@ fun SettingsScreen(
     initialDebugUpdateManifestUrl: String? = null,
     onSetDebugUpdateManifestUrl: (String) -> Unit = {},
     onClearDebugUpdateManifestUrl: () -> Unit = {},
+    onSwitchMode: (AgentMode) -> Unit = {},
+    onSetAccentColor: (Int) -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {
     LegacySettingsScreen(
@@ -980,7 +982,8 @@ fun SettingsScreen(
         onClearTerminal = onClearTerminal,
         getSavedApiKey = getSavedApiKey,
         onInstallDevStack = onInstallDevStack,
-        onSwitchMode = {},
+        onSwitchMode = onSwitchMode,
+        onSetAccentColor = onSetAccentColor,
         onNavigateToGitHub = onNavigateToGitHub,
     )
 }

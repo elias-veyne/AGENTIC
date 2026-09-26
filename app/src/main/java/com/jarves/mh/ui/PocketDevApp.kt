@@ -3412,7 +3412,7 @@ private fun ProjectsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
+                item { Spacer(Modifier.height(4.dp)) }
             }
             item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             if (projects.isEmpty()) {
