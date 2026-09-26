@@ -41,6 +41,7 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.ProviderApiClient
 import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.runtime.DshRuntimeBridge
+import com.jarves.mh.runtime.RuntimeBridge
 import com.jarves.mh.runtime.AgentRegistry
 import com.jarves.mh.runtime.AgentUpdateInfo
 import com.jarves.mh.runtime.NativeSpawnProcess
@@ -3479,7 +3480,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * output until the session completes or times out after 5 minutes.
      */
     private suspend fun runRealShard(
-        runtime: DshRuntimeBridge,
+        runtime: RuntimeBridge,
         projectId: String,
         projectSlug: String,
         projectKind: ProjectKind,
@@ -3527,7 +3528,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * a list of focused subtasks. Returns the raw text response.
      */
     private suspend fun runLLMDecompose(
-        runtime: DshRuntimeBridge,
+        runtime: RuntimeBridge,
         projectId: String,
         projectSlug: String,
         projectKind: ProjectKind,
@@ -3581,7 +3582,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = mutableListOf<Decomposer.DecomposedChild>()
                 val content = trimmed.removePrefix("[").removeSuffix("]")
-                val items = content.split Regex("""\},\s*\{""")
+                val items = content.split(Regex("""\},\s*\{"""))
                 for (item in items) {
                     val clean = item.removePrefix("{").removeSuffix("}")
                     val idMatch = Regex(""""id"\s*:\s*"([^"]+)"""").find(clean)
@@ -3593,8 +3594,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (result.isNotEmpty()) return result
             } catch (_: Exception) { /* fall through */ }
         }
-        // Fallback: default 2-way split.
-        return Decomposer.DecomposedChild.Default.decompose("")
+        // Fallback: default 2-way split (constructed inline — the decomposer is suspend).
+        return listOf(
+            Decomposer.DecomposedChild("ui", "Build/refactor the user-facing behavior and layout."),
+            Decomposer.DecomposedChild("backend", "Build/refactor the data, persistence, and backend wiring."),
+        )
     }
 
     companion object {

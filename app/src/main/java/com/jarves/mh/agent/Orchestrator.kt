@@ -176,7 +176,7 @@ class Orchestrator(
         store.setTaskState(taskId, store.getTaskState(taskId)?.copy(status = status) ?: TaskState(taskId, status = status))
     }
 
-    fun inspectMismatch(taskId: String, uiOutput: String, backendOutput: String) {
+    suspend fun inspectMismatch(taskId: String, uiOutput: String, backendOutput: String) {
         if (uiOutput.isNotBlank() && backendOutput.isNotBlank()) {
             if (contractsMismatch(uiOutput, backendOutput)) {
                 bus.send(AgentMessage.MismatchAlert(taskId, "Contract mismatch between UI and backend"))
