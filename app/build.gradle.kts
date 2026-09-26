@@ -70,7 +70,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.jarves.mh"
+        // Distinct applicationId so Agentic installs as a SEPARATE app
+        // alongside the v1 "com.jarves.mh" app (no overwrite / no data loss).
+        // The namespace above stays "com.jarves.mh" to keep all source imports
+        // and R classes intact; only the install identity differs.
+        applicationId = "com.veyne.agentic"
         minSdk = 28
         // The direct APK retains the proven target-28 PRoot execution path. The
         // Play build targets current Android while its runtime path is validated.
