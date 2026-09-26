@@ -100,6 +100,21 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("debug_update_manifest_url", "") ?: ""
         set(value) { preferences.edit().putString("debug_update_manifest_url", value).apply() }
 
+    /** Accent color chosen in Settings → Appearance, as an ARGB Int (default cyan). */
+    var accentColor: Int
+        get() = preferences.getInt("accent_color", 0xFF54CCFF.toInt())
+        set(value) { preferences.edit().putInt("accent_color", value).apply() }
+
+    /** Agent mode chosen during onboarding or from the composer mode pills. */
+    var agentMode: String
+        get() = preferences.getString("agent_mode", "SIMPLE") ?: "SIMPLE"
+        set(value) { preferences.edit().putString("agent_mode", value).apply() }
+
+    /** Cumulative estimated tokens across all sessions, for the Home stats card. */
+    var cumulativeTokens: Long
+        get() = preferences.getLong("cumulative_tokens", 0L)
+        set(value) { preferences.edit().putLong("cumulative_tokens", value).apply() }
+
     /** Development stacks the user picked during onboarding (names of DevStack). */
     var selectedDevStacks: Set<String>
         get() {

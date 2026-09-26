@@ -16,6 +16,10 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import com.jarves.mh.BuildConfig
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import java.io.File
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -185,6 +189,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarves.mh.model.ActivityItem
+import com.jarves.mh.agent.AgentMode
+import com.jarves.mh.ui.chat.ModePills
+import com.jarves.mh.ui.chat.PeerGrid
+import com.jarves.mh.ui.chat.PeerStatus
+import com.jarves.mh.ui.chat.PlanCard
+import com.jarves.mh.ui.chat.SubtaskChip
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
@@ -197,8 +207,10 @@ import com.jarves.mh.model.DiffLineType
 import com.jarves.mh.model.Project
 import com.jarves.mh.model.ProjectKind
 import com.jarves.mh.model.ProjectChat
+import com.jarves.mh.model.RecentChat
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
+import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
 import com.jarves.mh.model.inferredDshApiForUrl
 import com.jarves.mh.model.providersForAgent
 import com.jarves.mh.model.ToolRequest
@@ -221,6 +233,8 @@ import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.onboarding.DemoOnboarding
+import com.jarves.mh.ui.orbs.orbStateForActivity
 import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
 import com.jarves.mh.ui.theme.GlassCard
@@ -245,6 +259,9 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
     SETTINGS("Settings", Icons.Default.Settings),
     GITHUB("GitHub", Icons.Default.Link),
 }
+
+/** Demo-aligned navigation: Home / API Keys / Settings as the bottom bar. */
+private val RootBottomTabs = listOf(RootScreen.PROJECTS, RootScreen.AGENT, RootScreen.SETTINGS)
 private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Default.AutoAwesome),
     FILES("Files", Icons.Default.Folder),
@@ -256,6 +273,8 @@ private enum class WorkspaceTab(val label: String, val icon: ImageVector) {
 fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val batteryOptimizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     val projectsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     LaunchedEffect(state.toastMessage) {
         state.toastMessage?.let { message ->
@@ -334,6 +353,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onSend = viewModel::sendPrompt,
             onStop = viewModel::stopTask,
             onApproval = viewModel::answerApproval,
+            onSwitchMode = viewModel::switchAgentMode,
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
@@ -360,6 +380,23 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onOpenAttachment = viewModel::openChatAttachment,
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
         )
+        !state.onboardingComplete && state.startupStage == StartupStage.READY ->
+            DemoOnboarding(
+                initialMode = state.agentMode,
+                providers = DEEPSEEK_HARNESS_PROVIDERS.toList(),
+                onModeChosen = viewModel::switchAgentMode,
+                onProviderChosen = viewModel::updateProvider,
+                onSkipProvider = viewModel::finishOnboardingWithoutKey,
+                onConnectGitHub = viewModel::startGitHubLogin,
+                githubLogin = state.githubLogin,
+                githubUserCode = state.githubUserCode,
+                notificationsAllowed = { context.notificationsGranted() },
+                batteryUnrestricted = { context.batteryUnrestricted() },
+                onRequestNotifications = { requestNotifications(context, notificationPermissionLauncher) },
+                onRequestBattery = { requestBatteryExemption(context, batteryOptimizationLauncher) },
+                onPrepareWorkspace = { prepareOnboardingWorkspace(context) },
+                onSetupComplete = viewModel::finishOnboardingWithoutKey,
+            )
         else -> RootScreenHost(state, viewModel, projectsListState)
     }
 }
@@ -1899,6 +1936,78 @@ private fun StartupErrorScreen(
 
 private fun formatMegabytes(bytes: Long): String = "%.1f MB".format(bytes / 1_048_576.0)
 
+/** An in-flight activity item is a working subtask; a finished one is done. */
+private fun ActivityItem.toSubtaskChip(): SubtaskChip = SubtaskChip(
+    label = title,
+    done = isComplete,
+)
+
+/** Picks the most recent in-flight detail for a cooperative peer card. */
+private fun peerDetail(items: List<ActivityItem>, peer: String): String =
+    items.lastOrNull { !it.isComplete }?.detail
+        ?: items.lastOrNull()?.detail
+        ?: "$peer peer standby"
+
+private fun formatRelativeTime(millis: Long): String {
+    val minutes = (System.currentTimeMillis() - millis) / 60_000
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        minutes < 60 * 24 -> "${minutes / 60}h"
+        minutes < 60 * 24 * 7 -> "${minutes / (60 * 24)}d"
+        else -> "${minutes / (60 * 24 * 7)}w"
+    }
+}
+
+private fun formatTokens(tokens: Long): String = when {
+    tokens >= 1_000_000 -> "%.1fM".format(tokens / 1_000_000.0)
+    tokens >= 1_000 -> "%.0fk".format(tokens / 1_000.0)
+    else -> tokens.toString()
+}
+
+/** Notification permission is granted at runtime (API 33+) or by channel enablement. */
+private fun Context.notificationsGranted(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
+    }
+    return androidx.core.content.ContextCompat.checkSelfPermission(
+        this, Manifest.permission.POST_NOTIFICATIONS,
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun Context.batteryUnrestricted(): Boolean =
+    (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+
+private fun requestNotifications(
+    context: Context,
+    launcher: ActivityResultLauncher<String>,
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        RuntimeExecutionService.ensureNotificationChannels(context)
+        RuntimeSetupService.ensureNotificationChannel(context)
+        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+    }
+}
+
+private fun requestBatteryExemption(
+    context: Context,
+    launcher: ActivityResultLauncher<Intent>,
+) {
+    runCatching { launcher.launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }.onFailure {
+        launcher.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+    }
+}
+
+/** Ensures the agent workspace roots exist so the first session can start immediately. */
+private suspend fun prepareOnboardingWorkspace(context: Context) {
+    withContext(Dispatchers.IO) {
+        runCatching { File(context.filesDir, "workspace").mkdirs() }
+        runCatching { File(context.filesDir, "projects").mkdirs() }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RootScreenHost(
@@ -1921,7 +2030,7 @@ private fun RootScreenHost(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (!keyboardVisible) NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
-                    RootScreen.entries.filter { it != RootScreen.GITHUB }.forEach { tab ->
+                    RootBottomTabs.forEach { tab ->
                         NavigationBarItem(
                             selected = screen == tab,
                             onClick = { screen = tab },
@@ -1998,6 +2107,7 @@ private fun RootScreenHost(
                     onDiscoverModels = viewModel::discoverModels,
                     onValidateProvider = viewModel::validateProvider,
                     onSetThemeMode = viewModel::setThemeMode,
+                    onSetAccentColor = viewModel::setAccentColor,
                     onPing = viewModel::pingApi,
                     onClearTerminal = viewModel::clearTerminal,
                     getSavedApiKey = viewModel::getSavedApiKey,
@@ -3021,7 +3131,7 @@ private fun ProjectsScreen(
                         tint2 = Color(0x1A54CCFF),
                         icon = Icons.Default.Chat,
                         title = "Sessions",
-                        value = state.projects.size.toString(),
+                        value = state.totalChats.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
@@ -3030,7 +3140,7 @@ private fun ProjectsScreen(
                         tint2 = Color(0x1A7C6CFF),
                         icon = Icons.Default.SmartToy,
                         title = "Active Agents",
-                        value = if (state.isRunning) "1" else "0",
+                        value = state.agentSessions.size.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
@@ -3039,7 +3149,7 @@ private fun ProjectsScreen(
                         tint2 = Color(0x1A54CCFF),
                         icon = Icons.Default.Bolt,
                         title = "Tokens",
-                        value = "48k",
+                        value = formatTokens(state.cumulativeTokens),
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -3271,6 +3381,38 @@ private fun ProjectsScreen(
                         }
                     }
                 }
+            }
+            if (state.recentChats.isNotEmpty()) {
+                item { Text("Recent chats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+                items(state.recentChats, key = { it.chatId }) { chat: RecentChat ->
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        halo = Glass.BlueHalo,
+                        onClick = { onOpen(state.projects.first { it.id == chat.projectId }) },
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            GlassIconTile(tint1 = Color(0x2954CCFF), tint2 = Color(0x1A7C6CFF)) {
+                                Icon(Icons.Default.Chat, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(chat.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Glass.Text, maxLines = 1)
+                                Text(
+                                    chat.preview,
+                                    fontSize = 11.5.sp,
+                                    color = Glass.TextMuted,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                            }
+                            Text(formatRelativeTime(chat.updatedAtMillis), fontSize = 10.sp, color = Glass.TextMuted)
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(4.dp)) }
             }
             item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             if (projects.isEmpty()) {
@@ -3786,6 +3928,7 @@ private fun ReadOnlyProjectScreen(
                 taskFinishedAtMillis = null,
                 thinkingActive = false,
                 agentKind = state.agentKind,
+                agentMode = state.agentMode,
                 pendingAttachments = emptyList(),
                 onAttach = {},
                 onRemoveAttachment = {},
@@ -3807,6 +3950,7 @@ private fun WorkspaceScreen(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onApproval: (Boolean) -> Unit,
+    onSwitchMode: (AgentMode) -> Unit,
     onRefreshFiles: () -> Unit,
     onOpenFile: (WorkspaceEntry) -> Unit,
     onCloseFile: () -> Unit,
@@ -4047,6 +4191,8 @@ private fun WorkspaceScreen(
                     taskFinishedAtMillis = state.taskFinishedAtMillis,
                     thinkingActive = state.liveThinking,
                     agentKind = state.agentKind,
+                    agentMode = state.agentMode,
+                    onSwitchMode = onSwitchMode,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
@@ -4403,6 +4549,8 @@ private fun ChatTab(
     taskFinishedAtMillis: Long?,
     thinkingActive: Boolean,
     agentKind: AgentKind,
+    agentMode: AgentMode = AgentMode.SIMPLE,
+    onSwitchMode: (AgentMode) -> Unit = {},
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
@@ -4447,18 +4595,35 @@ private fun ChatTab(
                             onOpenAttachment,
                             showPet = isLastAgentMessage,
                             thinkingActive = thinkingActive,
+                            liveProcess = liveProcess,
+                            isRunning = isRunning,
                         )
                     }
                 }
                 if (liveProcess.isNotEmpty() || thinkingActive) {
                     item(key = "live-agent-process") {
-                        LiveAgentProcess(
-                            processItems = liveProcess,
-                            isRunning = isRunning,
-                            startedAtMillis = taskStartedAtMillis,
-                            finishedAtMillis = taskFinishedAtMillis,
-                            thinkingActive = thinkingActive,
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            when (agentMode) {
+                                AgentMode.AGENTIC -> {
+                                    val shards = liveProcess.map { it.toSubtaskChip() }
+                                    if (shards.isNotEmpty()) PlanCard(shards)
+                                }
+                                AgentMode.COOPERATIVE -> {
+                                    PeerGrid(
+                                        peerA = PeerStatus("UI peer", peerDetail(liveProcess, "UI")),
+                                        peerB = PeerStatus("Backend peer", peerDetail(liveProcess, "Backend")),
+                                    )
+                                }
+                                else -> {}
+                            }
+                            LiveAgentProcess(
+                                processItems = liveProcess,
+                                isRunning = isRunning,
+                                startedAtMillis = taskStartedAtMillis,
+                                finishedAtMillis = taskFinishedAtMillis,
+                                thinkingActive = thinkingActive,
+                            )
+                        }
                     }
                 }
                 approval?.let { request -> item { ApprovalCard(request, onApproval) } }
@@ -4537,6 +4702,7 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
+                ModePills(mode = agentMode, onSwitch = onSwitchMode, enabled = !isRunning)
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier
@@ -5005,6 +5171,8 @@ private fun MessageBubble(
     onOpenAttachment: (ChatAttachment) -> Unit,
     showPet: Boolean = false,
     thinkingActive: Boolean = false,
+    liveProcess: List<ActivityItem> = emptyList(),
+    isRunning: Boolean = false,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         GlassCard(
@@ -5056,7 +5224,7 @@ private fun MessageBubble(
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     OrbPet(
-                        state = if (thinkingActive) OrbState.SOLVING else OrbState.BREATHING,
+                        state = orbStateForActivity(thinkingActive, liveProcess, isRunning),
                         modifier = Modifier.size(width = 48.dp, height = 54.dp),
                     )
                 }
