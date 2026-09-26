@@ -138,6 +138,7 @@ data class AppUiState(
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
     val themeMode: com.jarves.mh.ui.theme.AppThemeMode = com.jarves.mh.ui.theme.AppThemeMode.DARK,
+    val selectedAgentMode: com.jarves.mh.agent.AgentMode = com.jarves.mh.agent.AgentMode.SIMPLE,
     val apiPingStatus: ApiPingStatus = ApiPingStatus.IDLE,
     val apiPingMessage: String? = null,
     val projects: List<Project> = emptyList(),
@@ -3410,4 +3411,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TEST_OPENROUTER_BASE_URL = "https://openrouter.ai/api"
         private const val TEST_OPENROUTER_MODEL = "stealth/ox-alpha"
     }
+}
+
+// Extension function to set agent mode in the ViewModel
+fun MainViewModel.setAgentMode(mode: AgentMode) {
+    _state.update { it.copy(selectedAgentMode = mode) }
 }

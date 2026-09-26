@@ -331,21 +331,45 @@ internal object OrbFrames {
 
     private fun frameBraid(size: Float, t: Float, o: OrbOpts): OrbFrame {
         val cx = size / 2f; val cy = size / 2f
-        val R = size / 2f * 0.7f
-        val pt = Proj(t * 0.1f, 0.25f, cx, cy, 1f)
+        val R = size / 2f * 0.76f
+        val pt = Proj(t * 0.4f, 0.3f, cx, cy, 1f)
         val rs = radiusScale(size, o.rsPow)
         val dots = mutableListOf<OrbDot>()
-        val strands = o.strandN; val turns = o.turns
-        for (i in 0 until strands) {
-            val f = i.toFloat() / strands
-            val a = f * 2f * PI.toFloat() * turns + t * 0.8f
-            val b = f * 2f * PI.toFloat() * turns * 0.6f + t * 0.5f
-            val x = cos(a) * R * o.rBase
-            val y = (f - 0.5f) * size * 0.8f
-            val z = sin(b) * R * o.rDepth
-            val p = pt(x, y, z)
+        // Ghost dots (spherical distribution)
+        val ghostN = o.ghostN
+        for (i in 0 until ghostN) {
+            val d = fibDir(i, ghostN)
+            val z = d[2] * R
+            val p = pt(d[0] * R, d[1] * R, z)
             val depth = (p[2] / R + 1) / 2
-            dots.add(OrbDot(p[0], p[1], p[2], (o.rBase + o.rDepth * depth * 0.3f) * rs, o.inkFar + o.inkSpan * depth))
+            dots.add(OrbDot(
+                p[0], p[1], p[2],
+                0.8f * rs,
+                0.78f,
+                0.1f + 0.22f * depth
+            ))
+        }
+        // Main strands (demo's surf-based weaving)
+        val strandN = o.strandN
+        val turns = o.turns
+        for (s in 0 until 3) {
+            val phase = s / 3f * 2f * PI.toFloat()
+            for (i in 0 until strandN) {
+                val u = (frac(i / strandN.toFloat() + t * 0.045f) * 2f - 1f) * 0.96f
+                val surf = sqrt(maxOf(0f, 1f - u * u))
+                val endFade = minOf(1f, (1f - abs(u)) / 0.1f)
+                val a = u * PI.toFloat() * turns + phase
+                val weave = 1f + 0.075f * sin(u * PI.toFloat() * turns * 2f + phase * 2f + t * 0.8f)
+                val rr = surf * R * weave
+                val p = pt(cos(a) * rr, u * R * weave, sin(a) * rr)
+                val depth = (p[2] / R + 1) / 2
+                dots.add(OrbDot(
+                    p[0], p[1], p[2],
+                    ((o.rBase + o.rDepth * depth) * rs),
+                    0.55f - 0.45f * depth,
+                    endFade * (0.45f + 0.55f * depth)
+                ))
+            }
         }
         return finalizeFrame(dots, mutableListOf(), o.rMin)
     }
