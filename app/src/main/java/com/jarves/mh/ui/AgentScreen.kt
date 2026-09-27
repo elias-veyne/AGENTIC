@@ -129,6 +129,7 @@ private enum class AgentSlot { AGENT1, AGENT2 }
 fun AgentScreen(
     state: AppUiState,
     onSaveProvider: (ProviderProfile, String) -> Unit,
+    onSaveAgent2Provider: (ProviderProfile, String) -> Unit = { _, _ -> },
     onDiscoverModels: suspend (ProviderProfile, String) -> ModelDiscoveryResult,
     onValidateProvider: suspend (ProviderProfile, String, List<DiscoveredModel>) -> ConnectionValidation,
     onPing: () -> Unit,
@@ -166,6 +167,13 @@ fun AgentScreen(
         mutableStateOf<Map<String, KeyConnectionStatus>>(emptyMap())
     }
     var viewedAgent by rememberSaveable { mutableStateOf(state.agentKind) }
+
+    // ── Agent 2 (independent second agent) key-slot form state ──
+    var a2Kind by rememberSaveable(state.agent2Provider.kind) { mutableStateOf(state.agent2Provider.kind) }
+    var a2ApiKey by remember { mutableStateOf("") }
+    var a2Saved by remember(state.agent2Provider, state.agent2ActiveApiKeyName) {
+        mutableStateOf(state.agent2Provider.hasSecret || state.agent2ActiveApiKeyName != null)
+    }
 
     val orderedAgents = remember(state.primaryAgentKind) {
         listOf(state.primaryAgentKind) + AgentKind.entries.filterNot { it == state.primaryAgentKind }
@@ -740,6 +748,136 @@ fun AgentScreen(
                                 ) {
                                     Text("Install ${viewedAgent.title}", fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 1.5. Agent API-key slots: Agent 1 (Head) vs Agent 2 ──
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Agent API keys", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            "Agent 1 (Head) is the default agent used in Simple chats and as the composer. " +
+                                "Agent 2 is used in Agentic & Cooperative chats. Each agent has its own key, on any provider.",
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Agent 1 (Head)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(34.dp).background(PocketOrange.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.SmartToy, null, tint = PocketOrange, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Agent 1 · Head", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    if (state.provider.hasSecret || state.activeApiKeyName != null)
+                                        "Key set · ${state.provider.kind.title}"
+                                    else "No key set — configure in Agent 1 below",
+                                    fontSize = 10.5.sp,
+                                    color = if (state.provider.hasSecret || state.activeApiKeyName != null)
+                                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        // Agent 2
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(34.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.Psychology, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Agent 2 · Worker", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    if (a2Saved) "Key set · ${a2Kind.title}" else "No key set — add Agent 2's key below",
+                                    fontSize = 10.5.sp,
+                                    color = if (a2Saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        // Agent 2 provider pills
+                        Text(
+                            "Agent 2 provider",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            val a2Providers = ProviderKind.entries.filter {
+                                it == ProviderKind.DEEPSEEK || it == ProviderKind.ANTHROPIC ||
+                                    it == ProviderKind.LLM_ROUTER
+                            }
+                            a2Providers.forEach { kind ->
+                                val sel = a2Kind == kind
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        )
+                                        .clickable { a2Kind = kind }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        kind.title.take(10),
+                                        fontSize = 10.sp,
+                                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                        }
+                        // Agent 2 key + save
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = a2ApiKey,
+                                onValueChange = { a2ApiKey = it },
+                                placeholder = { Text(if (a2Saved) "Replace Agent 2 key" else "Paste Agent 2 API key") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            )
+                            Button(
+                                onClick = {
+                                    if (a2ApiKey.isNotBlank()) {
+                                        onSaveAgent2Provider(
+                                            ProviderProfile(
+                                                kind = a2Kind,
+                                                baseUrl = a2Kind.defaultBaseUrl,
+                                                model = a2Kind.defaultModel,
+                                                hasSecret = true,
+                                            ),
+                                            a2ApiKey.trim(),
+                                        )
+                                        a2ApiKey = ""
+                                        a2Saved = true
+                                    }
+                                },
+                                enabled = a2ApiKey.isNotBlank(),
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("Save")
                             }
                         }
                     }
