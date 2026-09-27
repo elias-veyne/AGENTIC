@@ -171,6 +171,7 @@ fun AgentScreen(
 
     // ── Agent 2 (independent second agent) key-slot form state ──
     var a2Kind by rememberSaveable(state.agent2Provider.kind) { mutableStateOf(state.agent2Provider.kind) }
+    var a2BaseUrl by rememberSaveable(state.agent2Provider.baseUrl) { mutableStateOf(state.agent2Provider.baseUrl) }
     var a2ApiKey by remember { mutableStateOf("") }
     var a2Saved by remember(state.agent2Provider, state.agent2ActiveApiKeyName) {
         mutableStateOf(state.agent2Provider.hasSecret || state.agent2ActiveApiKeyName != null)
@@ -178,6 +179,7 @@ fun AgentScreen(
 
     // ── Sub-Agent 2 (Agent 3) key-slot form state ──
     var a3Kind by rememberSaveable(state.agent3Provider.kind) { mutableStateOf(state.agent3Provider.kind) }
+    var a3BaseUrl by rememberSaveable(state.agent3Provider.baseUrl) { mutableStateOf(state.agent3Provider.baseUrl) }
     var a3ApiKey by remember { mutableStateOf("") }
     var a3Saved by remember(state.agent3Provider, state.agent3ActiveApiKeyName) {
         mutableStateOf(state.agent3Provider.hasSecret || state.agent3ActiveApiKeyName != null)
@@ -833,7 +835,8 @@ fun AgentScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                             val a2Providers = ProviderKind.entries.filter {
                                 it == ProviderKind.DEEPSEEK || it == ProviderKind.ANTHROPIC ||
-                                    it == ProviderKind.LLM_ROUTER
+                                    it == ProviderKind.LLM_ROUTER || it == ProviderKind.KIMI ||
+                                    it == ProviderKind.OPENCODE_ZEN || it == ProviderKind.CUSTOM
                             }
                             a2Providers.forEach { kind ->
                                 val sel = a2Kind == kind
@@ -858,6 +861,17 @@ fun AgentScreen(
                                 }
                             }
                         }
+                        // Custom base URL for Sub-Agent 1
+                        if (a2Kind == ProviderKind.CUSTOM) {
+                            OutlinedTextField(
+                                value = a2BaseUrl,
+                                onValueChange = { a2BaseUrl = it },
+                                placeholder = { Text("Custom base URL (Anthropic-compatible)") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         // Agent 2 key + save
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
@@ -874,7 +888,7 @@ fun AgentScreen(
                                         onSaveAgent2Provider(
                                             ProviderProfile(
                                                 kind = a2Kind,
-                                                baseUrl = a2Kind.defaultBaseUrl,
+                                                baseUrl = if (a2Kind == ProviderKind.CUSTOM) a2BaseUrl.trim() else a2Kind.defaultBaseUrl,
                                                 model = a2Kind.defaultModel,
                                                 hasSecret = true,
                                             ),
@@ -921,7 +935,8 @@ fun AgentScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                             val a3Providers = ProviderKind.entries.filter {
                                 it == ProviderKind.DEEPSEEK || it == ProviderKind.ANTHROPIC ||
-                                    it == ProviderKind.LLM_ROUTER
+                                    it == ProviderKind.LLM_ROUTER || it == ProviderKind.KIMI ||
+                                    it == ProviderKind.OPENCODE_ZEN || it == ProviderKind.CUSTOM
                             }
                             a3Providers.forEach { kind ->
                                 val sel = a3Kind == kind
@@ -946,6 +961,17 @@ fun AgentScreen(
                                 }
                             }
                         }
+                        // Custom base URL for Sub-Agent 2
+                        if (a3Kind == ProviderKind.CUSTOM) {
+                            OutlinedTextField(
+                                value = a3BaseUrl,
+                                onValueChange = { a3BaseUrl = it },
+                                placeholder = { Text("Custom base URL (Anthropic-compatible)") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         // Sub-Agent 2 key + save
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
@@ -962,7 +988,7 @@ fun AgentScreen(
                                         onSaveAgent3Provider(
                                             ProviderProfile(
                                                 kind = a3Kind,
-                                                baseUrl = a3Kind.defaultBaseUrl,
+                                                baseUrl = if (a3Kind == ProviderKind.CUSTOM) a3BaseUrl.trim() else a3Kind.defaultBaseUrl,
                                                 model = a3Kind.defaultModel,
                                                 hasSecret = true,
                                             ),
