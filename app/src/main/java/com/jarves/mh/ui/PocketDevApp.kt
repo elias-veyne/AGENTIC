@@ -4580,7 +4580,7 @@ private fun RowScope.ModeChoicePill(
             .weight(1f)
             .clip(RoundedCornerShape(14.dp))
             .background(if (selected) halo.g1.copy(alpha = 0.35f) else Glass.Surface, RoundedCornerShape(14.dp))
-            .border(if (selected) halo.g1.copy(alpha = 0.8f) else Glass.Border, RoundedCornerShape(14.dp))
+            .border(1.dp, if (selected) halo.g1.copy(alpha = 0.8f) else Glass.Border, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
