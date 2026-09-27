@@ -1382,17 +1382,19 @@ private fun RuntimeInstallationScreen(
         onDispose { view.keepScreenOn = false }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BrandMark(compact = true)
-                        Spacer(Modifier.width(9.dp))
-                        Text("Set up Agentic", fontWeight = FontWeight.Bold)
-                    }
-                },
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BrandMark(compact = true)
+                            Spacer(Modifier.width(9.dp))
+                            Text("Set up Agentic", fontWeight = FontWeight.Bold)
+                        }
+                    },
                 actions = {
                     IconButton(onClick = onToggleTheme) {
                         Icon(
@@ -1502,6 +1504,7 @@ private fun RuntimeInstallationScreen(
                 lineHeight = 16.sp,
                 textAlign = TextAlign.Center,
             )
+        }
         }
     }
 }
