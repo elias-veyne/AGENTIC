@@ -237,6 +237,11 @@ data class AppUiState(
     val appUpdateTotalBytes: Long = -1L,
     val appUpdateError: String? = null,
     val agentMode: AgentMode = AgentMode.SIMPLE,
+    /** Mode of the currently open chat. Locked once the chat has started (the demo's
+     *  "choose Simple / Agentic / Cooperative once, at the start of a chat"). */
+    val activeChatMode: AgentMode = AgentMode.SIMPLE,
+    /** True once the user has picked a mode for the active chat (locked — no mid-chat switches). */
+    val chatModeLocked: Boolean = false,
     val accentColor: Int = 0xFF54CCFF.toInt(),
     /** Notification toggles (Settings → Notifications). Defaults mirror the demo. */
     val notifTaskAlerts: Boolean = true,
@@ -1302,6 +1307,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     preview = lastAgent?.text?.take(90)?.replace("\n", " ")?.ifBlank { "No replies yet" }
                         ?: "No replies yet",
                     updatedAtMillis = chat.updatedAtMillis,
+                    agentMode = chat.mode,
                 )
             }
         }.sortedByDescending { it.updatedAtMillis }.take(6)
@@ -1701,6 +1707,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     readOnlyProjectChats = chats,
                     readOnlyChatId = chat.id,
                     readOnlyMessages = preferences.loadMessages(project.id, chat.id),
+                    activeChatMode = chat.mode,
+                    chatModeLocked = true,
                 )
             }
             return
@@ -1724,6 +1732,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 readOnlyMessages = emptyList(),
                 projectChats = chats,
                 activeChatId = activeChat.id,
+                activeChatMode = activeChat.mode,
+                chatModeLocked = saved.any { it.fromUser } || saved.any { !it.fromUser },
                 messages = msgs,
                 liveProcess = emptyList(),
                 liveThinking = false,
@@ -1900,7 +1910,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         File(getApplication<Application>().filesDir, "workspaces/${project.id}").mkdirs()
         val firstChat = ProjectChat(title = "New chat")
         preferences.saveProjectChats(project.id, listOf(firstChat))
-        _state.update { it.copy(projectChats = listOf(firstChat), activeChatId = firstChat.id) }
+        _state.update { it.copy(projectChats = listOf(firstChat), activeChatId = firstChat.id, activeChatMode = firstChat.mode, chatModeLocked = false) }
         refreshProjectFiles()
     }
 
@@ -2595,13 +2605,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val project = _state.value.activeProject ?: return
         if (_state.value.isRunning) return
         persistMessages()
-        val chat = ProjectChat()
+        val chat = ProjectChat(mode = _state.value.agentMode)
         val chats = listOf(chat) + _state.value.projectChats
         preferences.saveProjectChats(project.id, chats)
         _state.update {
             it.copy(
                 projectChats = chats,
                 activeChatId = chat.id,
+                activeChatMode = chat.mode,
+                chatModeLocked = false,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
                 liveProcess = emptyList(),
                 liveThinking = false,
@@ -2609,6 +2621,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 taskFinishedAtMillis = null,
                 pendingApproval = null,
                 pendingAttachments = emptyList(),
+            )
+        }
+    }
+
+    /** Locks the active chat to a mode chosen at chat start. Only callable before the
+     *  chat has any user/agent exchange (the demo's "only one can be chosen, and it
+     *  can't be changed mid-chat — only in a new chat"). */
+    fun selectChatMode(mode: AgentMode) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        val chatId = current.activeChatId ?: return
+        if (current.chatModeLocked) {
+            _state.update { it.copy(toastMessage = "Mode is locked for this chat — start a new chat to switch.") }
+            return
+        }
+        val updatedChats = current.projectChats.map {
+            if (it.id == chatId) it.copy(mode = mode, title = it.title.ifBlank { "${mode.label()} chat" }) else it
+        }
+        preferences.saveProjectChats(project.id, updatedChats)
+        preferences.agentMode = mode.name
+        _state.update {
+            it.copy(
+                projectChats = updatedChats,
+                activeChatMode = mode,
+                chatModeLocked = true,
+                agentMode = mode,
             )
         }
     }
@@ -2623,6 +2661,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 activeChatId = chat.id,
+                activeChatMode = chat.mode,
+                chatModeLocked = saved.any { it.fromUser } || saved.any { !it.fromUser },
                 messages = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) },
                 liveProcess = emptyList(),
                 liveThinking = false,
@@ -2870,6 +2910,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 messages = it.messages + ChatMessage(fromUser = true, text = prompt.trim(), attachments = attachments),
                 pendingAttachments = emptyList(),
                 isRunning = true,
+                chatModeLocked = true,
                 activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + it.activity,
                 liveProcess = listOf(ActivityItem("Think", requestPlanningSummary(requestText, it.agentKind), false)),
                 liveThinking = true,
@@ -2894,7 +2935,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("</attached_files>")
         }
         failedApiKeyIds.clear()
-        when (state.value.agentMode) {
+        when (state.value.activeChatMode) {
             AgentMode.AGENTIC -> {
                 viewModelScope.launch {
                     val taskId = "task_${System.currentTimeMillis()}"

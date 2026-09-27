@@ -315,6 +315,7 @@ data class ProjectChat(
     val title: String = "New chat",
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis(),
+    val mode: com.jarves.mh.agent.AgentMode = com.jarves.mh.agent.AgentMode.SIMPLE,
 )
 
 /**

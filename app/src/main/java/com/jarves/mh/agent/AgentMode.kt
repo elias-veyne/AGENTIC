@@ -3,5 +3,11 @@ package com.jarves.mh.agent
 enum class AgentMode {
     SIMPLE,
     AGENTIC,
-    COOPERATIVE
+    COOPERATIVE;
+
+    fun label(): String = when (this) {
+        SIMPLE -> "Simple"
+        AGENTIC -> "Agentic"
+        COOPERATIVE -> "Cooperative"
+    }
 }

@@ -353,7 +353,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onSend = viewModel::sendPrompt,
             onStop = viewModel::stopTask,
             onApproval = viewModel::answerApproval,
-            onSwitchMode = viewModel::switchAgentMode,
+            onSwitchMode = viewModel::selectChatMode,
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
@@ -4194,7 +4194,8 @@ private fun WorkspaceScreen(
                     taskFinishedAtMillis = state.taskFinishedAtMillis,
                     thinkingActive = state.liveThinking,
                     agentKind = state.agentKind,
-                    agentMode = state.agentMode,
+                    agentMode = state.activeChatMode,
+                    chatModeLocked = state.chatModeLocked,
                     onSwitchMode = onSwitchMode,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
@@ -4538,6 +4539,174 @@ private fun FilesTab(
     }
 }
 
+/** Demo-style mode chooser shown at the very start of a new chat. The user picks ONE
+ *  of three modes; once a mode is locked the chooser disappears (per the spec). */
+@Composable
+private fun ChatModePickerCard(mode: AgentMode, onChoose: (AgentMode) -> Unit) {
+    GlassCard(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        halo = Glass.BlueHalo,
+        radius = 20.dp,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("Start a chat", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Glass.Text)
+            Text(
+                "Pick how this chat should run. You can't change it later — start a new chat to switch.",
+                fontSize = 11.5.sp,
+                color = Glass.TextMuted,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeChoicePill("Simple", "One direct reply", Icons.Default.SmartToy, mode == AgentMode.SIMPLE, Glass.BlueHalo) { onChoose(AgentMode.SIMPLE) }
+                ModeChoicePill("Agentic", "Head + 2 agents", Icons.Default.AutoAwesome, mode == AgentMode.AGENTIC, Glass.VioletHalo) { onChoose(AgentMode.AGENTIC) }
+                ModeChoicePill("Cooperative", "Head + peers", Icons.Default.Group, mode == AgentMode.COOPERATIVE, Glass.TealHalo) { onChoose(AgentMode.COOPERATIVE) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeChoicePill(
+    label: String,
+    detail: String,
+    icon: ImageVector,
+    selected: Boolean,
+    halo: Glass.Halo,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) Color(0x1F54CCFF) else Glass.Surface, RoundedCornerShape(14.dp))
+            .border(if (selected) Glass.BorderGlow else Glass.Border, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, null, tint = if (selected) Glass.Primary else Glass.TextMuted, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Glass.Text)
+        Text(detail, fontSize = 9.5.sp, color = Glass.TextMuted, textAlign = TextAlign.Center)
+    }
+}
+
+/** Agentic mode: two agent boxes pinned to the top-left and top-right of the chat. */
+@Composable
+private fun AgentBoxesRow(
+    leftName: String, leftRole: String, leftDetail: String, leftActive: Boolean, leftTint: Color,
+    rightName: String, rightRole: String, rightDetail: String, rightActive: Boolean, rightTint: Color,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        AgentStatusBox(leftName, leftRole, leftDetail, leftActive, leftTint, Modifier.weight(1f))
+        AgentStatusBox(rightName, rightRole, rightDetail, rightActive, rightTint, Modifier.weight(1f))
+    }
+}
+
+/** Cooperative mode: one head box pinned to the top of the chat. */
+@Composable
+private fun AgentBoxSingle(name: String, role: String, detail: String, active: Boolean, tint: Color) {
+    AgentStatusBox(name, role, detail, active, tint, Modifier.fillMaxWidth().padding(bottom = 10.dp))
+}
+
+/** A single agent status box: name + role + what-it-is-doing + live status dot. */
+@Composable
+private fun AgentStatusBox(
+    name: String,
+    role: String,
+    detail: String,
+    active: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(
+        modifier = modifier,
+        halo = Glass.Halo(g1 = tint.copy(alpha = 0.45f), g2 = tint.copy(alpha = 0.22f)),
+        radius = 16.dp,
+    ) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AgentBadge(name, tint)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Glass.Text)
+                    Spacer(Modifier.width(6.dp))
+                    Text(role, fontSize = 9.5.sp, color = Glass.TextMuted)
+                }
+                Text(
+                    detail,
+                    fontSize = 11.sp,
+                    color = if (active) tint else Glass.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            AgentStatusDot(active, tint)
+        }
+    }
+}
+
+@Composable
+private fun AgentBadge(name: String, tint: Color) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.18f))
+            .border(1.dp, tint.copy(alpha = 0.6f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            name.take(1).uppercase(),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = tint,
+        )
+    }
+}
+
+@Composable
+private fun AgentStatusDot(active: Boolean, tint: Color) {
+    val animatedAlpha by rememberInfiniteTransition().animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "dot",
+    )
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .background(if (active) tint.copy(alpha = animatedAlpha) else Glass.Border, CircleShape),
+    )
+}
+
+/** Replaces the mode selection once a chat's mode is locked — a quiet, non-interactive badge. */
+@Composable
+private fun LockedModeChip(mode: AgentMode) {
+    val tint = when (mode) {
+        AgentMode.SIMPLE -> Color(0xFF54CCFF)
+        AgentMode.AGENTIC -> Color(0xFF7C6CFF)
+        AgentMode.COOPERATIVE -> Color(0xFF4CC2A8)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .border(1.dp, tint.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.AutoAwesome, null, tint = tint, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Locked · ${mode.label()} mode", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = tint)
+    }
+}
+
 @Composable
 private fun ChatTab(
     messages: List<ChatMessage>,
@@ -4553,6 +4722,7 @@ private fun ChatTab(
     thinkingActive: Boolean,
     agentKind: AgentKind,
     agentMode: AgentMode = AgentMode.SIMPLE,
+    chatModeLocked: Boolean = false,
     onSwitchMode: (AgentMode) -> Unit = {},
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
@@ -4579,6 +4749,19 @@ private fun ChatTab(
         }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
+        if (!chatModeLocked) {
+            ChatModePickerCard(mode = agentMode, onChoose = onSwitchMode)
+        } else {
+            val doing = liveProcess.firstOrNull()?.title ?: if (isRunning) "Working…" else "Idle"
+            when (agentMode) {
+                AgentMode.AGENTIC -> AgentBoxesRow(
+                    "Agent 1", "Head", doing, isRunning || thinkingActive, Color(0xFF54CCFF),
+                    "Agent 2", "Worker", if (isRunning) "Executing shard…" else "Standing by", isRunning, Color(0xFF7C6CFF),
+                )
+                AgentMode.COOPERATIVE -> AgentBoxSingle("Head Agent", "Orchestrator", doing, isRunning || thinkingActive, Color(0xFF4CC2A8))
+                else -> {}
+            }
+        }
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -4705,7 +4888,9 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                ModePills(mode = agentMode, onSwitch = onSwitchMode, enabled = !isRunning)
+                if (chatModeLocked) {
+                    LockedModeChip(agentMode)
+                }
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier

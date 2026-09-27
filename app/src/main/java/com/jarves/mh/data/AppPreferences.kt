@@ -1,6 +1,7 @@
 package com.jarves.mh.data
 
 import android.content.Context
+import com.jarves.mh.agent.AgentMode
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChatAttachment
@@ -309,6 +310,7 @@ class AppPreferences(private val context: Context) {
                 put("title", chat.title)
                 put("createdAtMillis", chat.createdAtMillis)
                 put("updatedAtMillis", chat.updatedAtMillis)
+                put("mode", chat.mode.name)
             })
         }
         File(projectDir, "index.json").writeText(arr.toString())
@@ -327,6 +329,8 @@ class AppPreferences(private val context: Context) {
                         title = obj.optString("title", "Chat"),
                         createdAtMillis = obj.optLong("createdAtMillis", System.currentTimeMillis()),
                         updatedAtMillis = obj.optLong("updatedAtMillis", System.currentTimeMillis()),
+                        mode = runCatching { AgentMode.valueOf(obj.optString("mode", "SIMPLE")) }
+                            .getOrDefault(AgentMode.SIMPLE),
                     )
                 }.sortedByDescending { it.updatedAtMillis }
             }.getOrDefault(emptyList())
