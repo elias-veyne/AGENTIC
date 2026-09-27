@@ -101,6 +101,8 @@ import com.jarves.mh.model.providersForAgent
 import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
+import com.jarves.mh.ui.theme.Glass
+import com.jarves.mh.ui.theme.GlassBackground
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.launch
@@ -542,8 +544,11 @@ fun AgentScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
             TopAppBar(
                 modifier = Modifier.padding(top = 4.dp),
                 title = {
@@ -599,7 +604,7 @@ fun AgentScreen(
                     }
                     Spacer(Modifier.width(12.dp))
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
     ) { padding ->
@@ -1032,8 +1037,8 @@ fun AgentScreen(
             }
         }
     }
+    }
 }
-
 @Composable
 private fun AgentProviderCard(
     state: AppUiState,
