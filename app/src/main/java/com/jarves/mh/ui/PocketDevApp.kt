@@ -472,8 +472,10 @@ private fun BackgroundTaskSetupScreen(
         else -> taskProtectionConfirmed
     }
 
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -641,6 +643,7 @@ private fun BackgroundTaskSetupScreen(
             Spacer(Modifier.height(28.dp))
         }
     }
+    }
 }
 
 @Composable
@@ -745,8 +748,10 @@ private fun RuntimeSetupPromptScreen(
         BackHandler { currentStep = 0 }
     }
 
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -1095,6 +1100,7 @@ private fun RuntimeSetupPromptScreen(
 
             Spacer(Modifier.height(28.dp))
         }
+    }
     }
 }
 
@@ -1856,8 +1862,10 @@ private fun StartupErrorScreen(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -1935,6 +1943,7 @@ private fun StartupErrorScreen(
                 Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
             }
         }
+    }
     }
 }
 
