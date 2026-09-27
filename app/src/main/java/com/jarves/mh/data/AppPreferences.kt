@@ -283,6 +283,45 @@ class AppPreferences(private val context: Context) {
         )
     }
 
+    /** Persists the Sub-Agent 2 provider profile (mirrors [saveAgent2Provider], keyed for agent 3). */
+    fun saveAgent3Provider(profile: ProviderProfile) {
+        preferences.edit()
+            .putString("agent3_kind", profile.kind.name)
+            .putString("agent3_base_url", profile.baseUrl)
+            .putString("agent3_model", profile.model)
+            .putString("agent3_dsh_api", profile.dshApi)
+            .apply()
+    }
+
+    /** Loads the Sub-Agent 2 provider profile (mirrors [loadAgent2Provider], keyed for agent 3). */
+    fun loadAgent3Provider(vault: ApiKeyVault): ProviderProfile {
+        val storedKind = runCatching {
+            ProviderKind.valueOf(preferences.getString("agent3_kind", null).orEmpty())
+        }.getOrNull()
+        val kind = storedKind ?: ProviderKind.ANTHROPIC
+        val useStoredValues = storedKind == kind
+        return ProviderProfile(
+            kind = kind,
+            baseUrl = if (useStoredValues) {
+                preferences.getString("agent3_base_url", kind.defaultBaseUrl) ?: kind.defaultBaseUrl
+            } else {
+                kind.defaultBaseUrl
+            },
+            model = if (useStoredValues) {
+                preferences.getString("agent3_model", kind.defaultModel) ?: kind.defaultModel
+            } else {
+                kind.defaultModel
+            },
+            hasSecret = vault.contains(kind.name),
+            dshApi = if (useStoredValues) {
+                preferences.getString("agent3_dsh_api", defaultDshApiForProvider(kind))
+                    ?: defaultDshApiForProvider(kind)
+            } else {
+                defaultDshApiForProvider(kind)
+            },
+        )
+    }
+
     fun saveProjects(projects: List<Project>) {
         val arr = JSONArray()
         projects.forEach { p ->

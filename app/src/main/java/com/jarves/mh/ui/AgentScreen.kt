@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -132,6 +133,7 @@ fun AgentScreen(
     state: AppUiState,
     onSaveProvider: (ProviderProfile, String) -> Unit,
     onSaveAgent2Provider: (ProviderProfile, String) -> Unit = { _, _ -> },
+    onSaveAgent3Provider: (ProviderProfile, String) -> Unit = { _, _ -> },
     onDiscoverModels: suspend (ProviderProfile, String) -> ModelDiscoveryResult,
     onValidateProvider: suspend (ProviderProfile, String, List<DiscoveredModel>) -> ConnectionValidation,
     onPing: () -> Unit,
@@ -175,6 +177,13 @@ fun AgentScreen(
     var a2ApiKey by remember { mutableStateOf("") }
     var a2Saved by remember(state.agent2Provider, state.agent2ActiveApiKeyName) {
         mutableStateOf(state.agent2Provider.hasSecret || state.agent2ActiveApiKeyName != null)
+    }
+
+    // ── Sub-Agent 2 (Agent 3) key-slot form state ──
+    var a3Kind by rememberSaveable(state.agent3Provider.kind) { mutableStateOf(state.agent3Provider.kind) }
+    var a3ApiKey by remember { mutableStateOf("") }
+    var a3Saved by remember(state.agent3Provider, state.agent3ActiveApiKeyName) {
+        mutableStateOf(state.agent3Provider.hasSecret || state.agent3ActiveApiKeyName != null)
     }
 
     val orderedAgents = remember(state.primaryAgentKind) {
@@ -770,13 +779,14 @@ fun AgentScreen(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Agent API keys", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Text(
-                            "Agent 1 (Head) is the default agent used in Simple chats and as the composer. " +
-                                "Agent 2 is used in Agentic & Cooperative chats. Each agent has its own key, on any provider.",
+                            "Head is the default agent you chat with in every mode (Simple / Agentic / " +
+                                "Cooperative). Sub-Agent 1 & Sub-Agent 2 are the workers — they appear in the " +
+                                "boxes during Agentic (both) and Cooperative (one). Each agent has its own key, on any provider.",
                             fontSize = 11.sp,
                             lineHeight = 16.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        // Agent 1 (Head)
+                        // Head
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 Modifier.size(34.dp).background(PocketOrange.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
@@ -786,11 +796,11 @@ fun AgentScreen(
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Agent 1 · Head", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Head", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Text(
                                     if (state.provider.hasSecret || state.activeApiKeyName != null)
                                         "Key set · ${state.provider.kind.title}"
-                                    else "No key set — configure in Agent 1 below",
+                                    else "No key set — configure in Agent connection below",
                                     fontSize = 10.5.sp,
                                     color = if (state.provider.hasSecret || state.activeApiKeyName != null)
                                         MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
@@ -808,9 +818,9 @@ fun AgentScreen(
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Agent 2 · Worker", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Sub-Agent 1", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Text(
-                                    if (a2Saved) "Key set · ${a2Kind.title}" else "No key set — add Agent 2's key below",
+                                    if (a2Saved) "Key set · ${a2Kind.title}" else "No key set — add Sub-Agent 1's key below",
                                     fontSize = 10.5.sp,
                                     color = if (a2Saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                 )
@@ -818,7 +828,7 @@ fun AgentScreen(
                         }
                         // Agent 2 provider pills
                         Text(
-                            "Agent 2 provider",
+                            "Sub-Agent 1 provider",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -856,7 +866,7 @@ fun AgentScreen(
                             OutlinedTextField(
                                 value = a2ApiKey,
                                 onValueChange = { a2ApiKey = it },
-                                placeholder = { Text(if (a2Saved) "Replace Agent 2 key" else "Paste Agent 2 API key") },
+                                placeholder = { Text(if (a2Saved) "Replace Sub-Agent 1 key" else "Paste Sub-Agent 1 API key") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f),
@@ -878,6 +888,94 @@ fun AgentScreen(
                                     }
                                 },
                                 enabled = a2ApiKey.isNotBlank(),
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("Save")
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        // Sub-Agent 2 (Agent 3)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(34.dp).background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.Build, null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Sub-Agent 2", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    if (a3Saved) "Key set · ${a3Kind.title}" else "No key set — add Sub-Agent 2's key below",
+                                    fontSize = 10.5.sp,
+                                    color = if (a3Saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        // Sub-Agent 2 provider pills
+                        Text(
+                            "Sub-Agent 2 provider",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            val a3Providers = ProviderKind.entries.filter {
+                                it == ProviderKind.DEEPSEEK || it == ProviderKind.ANTHROPIC ||
+                                    it == ProviderKind.LLM_ROUTER
+                            }
+                            a3Providers.forEach { kind ->
+                                val sel = a3Kind == kind
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        )
+                                        .clickable { a3Kind = kind }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        kind.title.take(10),
+                                        fontSize = 10.sp,
+                                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                        }
+                        // Sub-Agent 2 key + save
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = a3ApiKey,
+                                onValueChange = { a3ApiKey = it },
+                                placeholder = { Text(if (a3Saved) "Replace Sub-Agent 2 key" else "Paste Sub-Agent 2 API key") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            )
+                            Button(
+                                onClick = {
+                                    if (a3ApiKey.isNotBlank()) {
+                                        onSaveAgent3Provider(
+                                            ProviderProfile(
+                                                kind = a3Kind,
+                                                baseUrl = a3Kind.defaultBaseUrl,
+                                                model = a3Kind.defaultModel,
+                                                hasSecret = true,
+                                            ),
+                                            a3ApiKey.trim(),
+                                        )
+                                        a3ApiKey = ""
+                                        a3Saved = true
+                                    }
+                                },
+                                enabled = a3ApiKey.isNotBlank(),
                                 shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))

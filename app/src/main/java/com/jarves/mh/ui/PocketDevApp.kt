@@ -2091,6 +2091,7 @@ private fun RootScreenHost(
                         viewModel.updateProvider(profile, key)
                     },
                     onSaveAgent2Provider = viewModel::saveAgent2Provider,
+                    onSaveAgent3Provider = viewModel::saveAgent3Provider,
                     onDiscoverModels = viewModel::discoverModels,
                     onValidateProvider = viewModel::validateProvider,
                     onPing = viewModel::pingApi,
@@ -4617,6 +4618,17 @@ private fun AgentBoxSingle(name: String, role: String, detail: String, active: B
     AgentStatusBox(name, role, detail, active, tint, Modifier.fillMaxWidth().padding(bottom = 10.dp))
 }
 
+/** Derives a sub-agent's current activity line from the live process list (index-aligned). */
+private fun judgeSubActivity(liveProcess: List<ActivityItem>, index: Int): String {
+    val sized = liveProcess.size
+    val step = if (sized > 1) index % sized else 0
+    return when {
+        liveProcess.isEmpty() -> "Idle"
+        liveProcess.getOrNull(step)?.detail?.isNotBlank() == true -> liveProcess[step].detail!!
+        else -> liveProcess[step].title
+    }
+}
+
 /** A single agent status box: name + role + what-it-is-doing + live status dot. */
 @Composable
 private fun AgentStatusBox(
@@ -4760,10 +4772,10 @@ private fun ChatTab(
             val doing = liveProcess.firstOrNull()?.title ?: if (isRunning) "Working…" else "Idle"
             when (agentMode) {
                 AgentMode.AGENTIC -> AgentBoxesRow(
-                    "Agent 1", "Head", doing, isRunning || thinkingActive, Color(0xFF54CCFF),
-                    "Agent 2", "Worker", if (isRunning) "Executing shard…" else "Standing by", isRunning, Color(0xFF7C6CFF),
+                    "Sub-Agent 1", "Worker A", if (isRunning) judgeSubActivity(liveProcess, 0) else "Standing by", isRunning, Color(0xFF7C6CFF),
+                    "Sub-Agent 2", "Worker B", if (isRunning) judgeSubActivity(liveProcess, 1) else "Standing by", isRunning, Color(0xFF4CC2A8),
                 )
-                AgentMode.COOPERATIVE -> AgentBoxSingle("Head Agent", "Orchestrator", doing, isRunning || thinkingActive, Color(0xFF4CC2A8))
+                AgentMode.COOPERATIVE -> AgentBoxSingle("Sub-Agent", "Peer", doing, isRunning || thinkingActive, Color(0xFF4CC2A8))
                 else -> {}
             }
         }
