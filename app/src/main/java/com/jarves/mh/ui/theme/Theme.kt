@@ -13,13 +13,14 @@ import androidx.core.view.WindowCompat
 
 // Agentic glassmorphism palette (matches approved HTML demo)
 val AgenticBlue = Color(0xFF54CCFF)
-val AgenticViolet = Color(0xFF7C6CFF)
-val AgenticBg = Color(0xFF05070D)
-val AgenticSurface = Color(0xFF0C1119)
-val AgenticSurfaceVariant = Color(0xFF141B27)
-val AgenticOutline = Color(0xFF223042)
-val AgenticText = Color(0xFFE8EEF7)
-val AgenticTextDim = Color(0xFF93A1B5)
+val AgenticBlue = Color(0xFF38BDF8)
+val AgenticViolet = Color(0xFFBAE6FD)
+val AgenticBg = Color(0xFF000000)
+val AgenticSurface = Color(0xFF0A0F18)
+val AgenticSurfaceVariant = Color(0xFF111A2B)
+val AgenticOutline = Color(0xFF2A3B55)
+val AgenticText = Color(0xFFBAE6FD)
+val AgenticTextDim = Color(0xFF7DD3FC)
 
 val PocketOrange = AgenticBlue
 val PocketBlue = AgenticViolet
@@ -31,11 +32,11 @@ val PocketOutline = AgenticOutline
 
 private val DarkColors = darkColorScheme(
     primary = AgenticBlue,
-    onPrimary = Color(0xFF002030),
-    primaryContainer = Color(0xFF0E2A3A),
-    onPrimaryContainer = Color(0xFFBFEAff),
+    onPrimary = Color(0xFF001A2E),
+    primaryContainer = Color(0xFF0E2B45),
+    onPrimaryContainer = Color(0xFFCFEFFF),
     secondary = AgenticViolet,
-    onSecondary = Color(0xFF12002B),
+    onSecondary = Color(0xFF0A2033),
     tertiary = PocketGreen,
     onTertiary = Color(0xFF00391E),
     background = AgenticBg,
@@ -45,7 +46,7 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = AgenticSurfaceVariant,
     onSurfaceVariant = AgenticTextDim,
     outline = AgenticOutline,
-    outlineVariant = Color(0xFF1B2635),
+    outlineVariant = Color(0xFF1E2E45),
 )
 
 private val LightColors = lightColorScheme(

@@ -38,18 +38,19 @@ import androidx.compose.ui.unit.dp
  * blooms behind each card.
  */
 object Glass {
-    val Bg = Color(0xFF05070D)
-    val Surface = Color(0x0EFFFFFF)         // rgba(255,255,255,.055)
-    val SurfaceStrong = Color(0x17FFFFFF)   // rgba(255,255,255,.09)
-    val SurfaceInset = Color(0x2EFFFFFF)    // rgba(255,255,255,.18) top hairline
-    val Border = Color(0x1AFFFFFF)          // rgba(255,255,255,.1)
-    val BorderGlow = Color(0x38FFFFFF)      // rgba(255,255,255,.22)
-    val Primary = Color(0xFF54CCFF)
-    val Violet = Color(0xFF7C6CFF)
-    val Text = Color(0xFFEEF3FB)
-    val TextMuted = Color(0xFF9FB2D4)
-    val Ok = Color(0xFF4CC2A8)
-    val Warn = Color(0xFFFFB454)
+    val Bg = Color(0xFF000000)              // pure AMOLED black
+    val Surface = Color(0x1CFFFFFF)         // rgba(255,255,255,.11)
+    val SurfaceStrong = Color(0x24FFFFFF)   // rgba(255,255,255,.14)
+    val SurfaceInset = Color(0x59FFFFFF)    // rgba(255,255,255,.35) top highlight
+    val Border = Color(0x38FFFFFF)          // rgba(255,255,255,.22)
+    val BorderGlow = Color(0x6680B4FF)      // brighter blue-white when hovered
+    val Primary = Color(0xFF38BDF8)         // deep blue
+    val Violet = Color(0xFFBAE6FD)          // ice blue
+    val Text = Color(0xFFBAE6FD)            // ice blue text (with white-glow feel)
+    val TextMuted = Color(0xFF7DD3FC)       // muted light blue
+    val TextBody = Color(0xFF7DD3FC)        // body-size light blue
+    val Ok = Color(0xFF38BDF8)
+    val Warn = Color(0xFF7DD3FC)
 
     val Radius = 20.dp
     val RadiusCard = 16.dp
@@ -57,13 +58,13 @@ object Glass {
 
     /** Two-stop radial halo that sits behind a card, tinted per-accent. */
     data class Halo(
-        val g1: Color = Color(0x4D54CCFF.toInt()),   // primary at ~30%
-        val g2: Color = Color(0x387C6CFF.toInt()),   // violet at ~22%
+        val g1: Color = Color(0x4D38BDF8.toInt()),   // deep blue ~30%
+        val g2: Color = Color(0x3880B4FF.toInt()),   // light blue ~22%
     )
 
     val BlueHalo = Halo()
-    val VioletHalo = Halo(g1 = Color(0x4D7C6CFF.toInt()), g2 = Color(0x3854CCFF.toInt()))
-    val TealHalo = Halo(g1 = Color(0x4D4CC2A8.toInt()), g2 = Color(0x3854CCFF.toInt()))
+    val VioletHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x38BAE6FD.toInt()))
+    val TealHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x3880B4FF.toInt()))
 }
 
 /**
