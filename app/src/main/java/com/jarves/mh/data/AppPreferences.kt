@@ -227,6 +227,62 @@ class AppPreferences(private val context: Context) {
 
     private fun providerPrefix(agent: AgentKind): String = "provider_${agent.stableId.replace('-', '_')}_"
 
+    // ── Agent 2 provider (independent second agent used by Agentic/Cooperative) ──
+    var agent2Kind: String
+        get() = preferences.getString("agent2_kind", "") ?: ""
+        set(value) { preferences.edit().putString("agent2_kind", value).apply() }
+
+    var agent2Model: String
+        get() = preferences.getString("agent2_model", "") ?: ""
+        set(value) { preferences.edit().putString("agent2_model", value).apply() }
+
+    var agent2BaseUrl: String
+        get() = preferences.getString("agent2_base_url", "") ?: ""
+        set(value) { preferences.edit().putString("agent2_base_url", value).apply() }
+
+    var agent2DshApi: String
+        get() = preferences.getString("agent2_dsh_api", "") ?: ""
+        set(value) { preferences.edit().putString("agent2_dsh_api", value).apply() }
+
+    /** Persists the Agent 2 provider profile (mirrors [saveProvider], keyed for agent 2). */
+    fun saveAgent2Provider(profile: ProviderProfile) {
+        preferences.edit()
+            .putString("agent2_kind", profile.kind.name)
+            .putString("agent2_base_url", profile.baseUrl)
+            .putString("agent2_model", profile.model)
+            .putString("agent2_dsh_api", profile.dshApi)
+            .apply()
+    }
+
+    /** Loads the Agent 2 provider profile (mirrors [loadProvider], keyed for agent 2). */
+    fun loadAgent2Provider(vault: ApiKeyVault): ProviderProfile {
+        val storedKind = runCatching {
+            ProviderKind.valueOf(preferences.getString("agent2_kind", null).orEmpty())
+        }.getOrNull()
+        val kind = storedKind ?: ProviderKind.ANTHROPIC
+        val useStoredValues = storedKind == kind
+        return ProviderProfile(
+            kind = kind,
+            baseUrl = if (useStoredValues) {
+                preferences.getString("agent2_base_url", kind.defaultBaseUrl) ?: kind.defaultBaseUrl
+            } else {
+                kind.defaultBaseUrl
+            },
+            model = if (useStoredValues) {
+                preferences.getString("agent2_model", kind.defaultModel) ?: kind.defaultModel
+            } else {
+                kind.defaultModel
+            },
+            hasSecret = vault.contains(kind.name),
+            dshApi = if (useStoredValues) {
+                preferences.getString("agent2_dsh_api", defaultDshApiForProvider(kind))
+                    ?: defaultDshApiForProvider(kind)
+            } else {
+                defaultDshApiForProvider(kind)
+            },
+        )
+    }
+
     fun saveProjects(projects: List<Project>) {
         val arr = JSONArray()
         projects.forEach { p ->

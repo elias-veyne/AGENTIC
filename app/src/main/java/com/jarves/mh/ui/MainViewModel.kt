@@ -148,6 +148,9 @@ data class AppUiState(
     val backgroundSetupComplete: Boolean = false,
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
+    /** Independent second agent (Agent 2) used by Agentic mode / cooperative peers. */
+    val agent2Provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
+    val agent2ActiveApiKeyName: String? = null,
     val themeMode: com.jarves.mh.ui.theme.AppThemeMode = com.jarves.mh.ui.theme.AppThemeMode.DARK,
     val apiPingStatus: ApiPingStatus = ApiPingStatus.IDLE,
     val apiPingMessage: String? = null,
@@ -300,6 +303,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             recentChats = loadRecentChats(),
             provider = preferences.loadProvider(vault, initialAgentKind),
             activeApiKeyName = vault.list(preferences.loadProvider(vault, initialAgentKind).kind.name)
+                .firstOrNull(ApiKeyInfo::isActive)?.name,
+            agent2Provider = preferences.loadAgent2Provider(vault),
+            agent2ActiveApiKeyName = vault.list(preferences.loadAgent2Provider(vault).kind.name)
                 .firstOrNull(ApiKeyInfo::isActive)?.name,
             themeMode = runCatching { com.jarves.mh.ui.theme.AppThemeMode.valueOf(preferences.themeMode.uppercase()) }
                 .getOrDefault(com.jarves.mh.ui.theme.AppThemeMode.DARK),
@@ -968,6 +974,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(
                 activeApiKeyName = keys.firstOrNull(ApiKeyInfo::isActive)?.name,
                 provider = current.provider.copy(hasSecret = keys.isNotEmpty()),
+            )
+        }
+    }
+
+    /**
+     * Persists the Agent 2 provider profile and (optionally) its API key, and updates
+     * [AppUiState.agent2Provider]/[AppUiState.agent2ActiveApiKeyName] in state.
+     */
+    fun saveAgent2Provider(profile: ProviderProfile, apiKey: String) {
+        if (apiKey.isNotBlank()) vault.put(profile.kind.name, apiKey)
+        val saved = profile.copy(
+            hasSecret = apiKey.isNotBlank() || vault.contains(profile.kind.name),
+        )
+        preferences.saveAgent2Provider(saved)
+        val keys = vault.list(saved.kind.name)
+        _state.update { current ->
+            current.copy(
+                agent2Provider = saved,
+                agent2ActiveApiKeyName = keys.firstOrNull(ApiKeyInfo::isActive)?.name,
+            )
+        }
+    }
+
+    /**
+     * Activates a key in the shared per-provider pool for Agent 2 and refreshes
+     * [AppUiState.agent2Provider.hasSecret]/[AppUiState.agent2ActiveApiKeyName].
+     * A blank [keyId] only refreshes Agent 2's active-key state.
+     */
+    fun setAgent2ActiveApiKey(kind: ProviderKind, keyId: String) {
+        if (keyId.isNotBlank()) vault.activate(kind.name, keyId)
+        val keys = vault.list(kind.name)
+        _state.update { current ->
+            current.copy(
+                agent2ActiveApiKeyName = keys.firstOrNull(ApiKeyInfo::isActive)?.name,
+                agent2Provider = current.agent2Provider.copy(hasSecret = keys.isNotEmpty()),
             )
         }
     }
@@ -2956,6 +2997,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     // Real executor: each shard runs its own PRoot session concurrently (V2).
+                    // Agent 1 (head/composer) drives decomposition; worker shards (Agent 2)
+                    // run on the Agent-2 provider when one is configured, else Agent 1's.
                     val executor = TaskExecutor { instruction ->
                         agentSystem.recordHeartbeat(AgentId.worker("shard"))
                         runRealShard(
@@ -2966,6 +3009,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             instruction,
                             history,
                             state.value.provider,
+                            state.value.agent2Provider,
                         )
                     }
 
@@ -3528,7 +3572,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         instruction: String,
         history: List<ChatMessage>,
         provider: ProviderProfile,
+        agent2Provider: ProviderProfile? = null,
     ): String {
+        // Agent-2 worker shards run on Agent 2's provider when it has a usable key,
+        // otherwise fall back to Agent 1's provider.
+        val effectiveProvider = if (
+            agent2Provider != null &&
+            (agent2Provider.hasSecret || vault.get(agent2Provider.kind.name) != null)
+        ) agent2Provider else provider
         val output = StringBuilder()
         val done = CompletableDeferred<String>()
         var sessionId: String? = null
@@ -3556,7 +3607,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             projectKind,
             instruction,
             history,
-            provider,
+            effectiveProvider,
         )
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
