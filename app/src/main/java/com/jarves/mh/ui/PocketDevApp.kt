@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -4566,7 +4567,7 @@ private fun ChatModePickerCard(mode: AgentMode, onChoose: (AgentMode) -> Unit) {
 }
 
 @Composable
-private fun ModeChoicePill(
+private fun RowScope.ModeChoicePill(
     label: String,
     detail: String,
     icon: ImageVector,
@@ -4578,8 +4579,8 @@ private fun ModeChoicePill(
         modifier = Modifier
             .weight(1f)
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) Color(0x1F54CCFF) else Glass.Surface, RoundedCornerShape(14.dp))
-            .border(if (selected) Glass.BorderGlow else Glass.Border, RoundedCornerShape(14.dp))
+            .background(if (selected) halo.g1.copy(alpha = 0.35f) else Glass.Surface, RoundedCornerShape(14.dp))
+            .border(if (selected) halo.g1.copy(alpha = 0.8f) else Glass.Border, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
