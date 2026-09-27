@@ -95,6 +95,9 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.ui.theme.AppThemeMode
+import com.jarves.mh.ui.theme.Glass
+import com.jarves.mh.ui.theme.GlassBackground
+import com.jarves.mh.ui.theme.GlassCard
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.launch
@@ -139,6 +142,8 @@ private fun LegacySettingsScreen(
     var terminalClearedMessage by remember { mutableStateOf(false) }
     var showChildProcessHelp by rememberSaveable { mutableStateOf(false) }
 
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -154,7 +159,7 @@ private fun LegacySettingsScreen(
                         Text("Settings", fontWeight = FontWeight.Bold)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
     ) { padding ->
@@ -216,10 +221,9 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Visibility,
                 )
                 Spacer(Modifier.height(10.dp))
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    radius = 16.dp,
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
@@ -259,10 +263,9 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Code,
                 )
                 Spacer(Modifier.height(10.dp))
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    radius = 16.dp,
                 ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text(
@@ -388,10 +391,9 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Link,
                 )
                 Spacer(Modifier.height(10.dp))
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    radius = 16.dp,
                 ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text(
@@ -429,10 +431,9 @@ private fun LegacySettingsScreen(
                 Spacer(Modifier.height(10.dp))
 
                 // Current Live Status Card
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    radius = 16.dp,
                 ) {
                     Row(
                         modifier = Modifier
@@ -744,10 +745,9 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Terminal,
                 )
                 Spacer(Modifier.height(10.dp))
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    radius = 16.dp,
                 ) {
                     Column(
                         modifier = Modifier
@@ -869,10 +869,9 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Settings,
                 )
                 Spacer(Modifier.height(10.dp))
-                Card(
+                GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                    radius = 16.dp,
                 ) {
                     Column(
                         modifier = Modifier
@@ -899,6 +898,7 @@ private fun LegacySettingsScreen(
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
     }
 }
 
@@ -1084,10 +1084,9 @@ private fun AccentRow(selected: Int, onSelect: (Int) -> Unit) {
         0xFFF5C2E7.toInt() to "Pink",
         0xFFFAB387.toInt() to "Orange",
     )
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        radius = 16.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text("Accent color", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
