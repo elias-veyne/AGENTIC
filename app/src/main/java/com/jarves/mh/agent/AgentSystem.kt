@@ -68,10 +68,15 @@ class AgentSystem(
         executor: TaskExecutor = this.executor,
     ) = coroutineScope {
         _events.emit(AgentEvent.TaskSubmitted(taskId))
+        // Two sub-agent workers (Sub-Agent 1 + Sub-Agent 2) so the head's
+        // decomposed shards split across both, per the Agentic orchestration model.
         val workers = orchestrator.getWorkers().ifEmpty {
-            val id = AgentId.worker("ui")
-            orchestrator.registerWorker(id)
-            listOf(id)
+            val ids = listOf(
+                AgentId.worker("sub1"),
+                AgentId.worker("sub2"),
+            )
+            ids.forEach { orchestrator.registerWorker(it) }
+            ids
         }
 
         // V4: heartbeat monitor loop — watches each worker and escalates on silence.
