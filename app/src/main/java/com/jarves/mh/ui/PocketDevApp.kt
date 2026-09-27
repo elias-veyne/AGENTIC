@@ -2293,7 +2293,9 @@ private fun ProviderSetupScreen(
         BackHandler(onBack = handleBack)
     }
 
-    Scaffold(
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
+    Scaffold(containerColor = Color.Transparent, 
         topBar = {
             TopAppBar(
                 title = { Text(if (onboarding) "Set up Agentic" else "AI Provider & Settings") },
@@ -2372,6 +2374,7 @@ private fun ProviderSetupScreen(
                 )
             }
         }
+    }
     }
 }
 

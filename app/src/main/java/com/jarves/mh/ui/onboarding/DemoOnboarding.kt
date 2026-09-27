@@ -58,6 +58,8 @@ import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.theme.Glass
+import com.jarves.mh.ui.theme.GlassBackground
 
 /**
  * The demo's 4-step first-run flow — mode, model, GitHub, then "Setting things
@@ -132,29 +134,31 @@ private fun OnboardingScaffold(
     actions: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 22.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        Spacer(Modifier.height(48.dp))
-        StepIndicator(step)
-        Spacer(Modifier.height(26.dp))
-        Text(title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            subtitle,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 20.sp,
-        )
-        Spacer(Modifier.height(22.dp))
-        content()
-        Spacer(Modifier.weight(1f))
-        actions()
-        Spacer(Modifier.height(30.dp))
+    Box(Modifier.fillMaxSize()) {
+        GlassBackground()
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 22.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Spacer(Modifier.height(48.dp))
+            StepIndicator(step)
+            Spacer(Modifier.height(26.dp))
+            Text(title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Glass.Text)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                subtitle,
+                fontSize = 13.sp,
+                color = Glass.TextMuted,
+                lineHeight = 20.sp,
+            )
+            Spacer(Modifier.height(22.dp))
+            content()
+            Spacer(Modifier.weight(1f))
+            actions()
+            Spacer(Modifier.height(30.dp))
+        }
     }
 }
 
