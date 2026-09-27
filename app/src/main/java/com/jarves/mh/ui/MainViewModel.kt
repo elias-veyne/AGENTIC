@@ -827,6 +827,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun projectGuestRoot(project: Project): String = "/workspace/${project.slug}"
 
+    /**
+     * Local, honest token estimate (~4 characters per token) used for the Home
+     * "Tokens" stat. The external runtime does not stream per-message token
+     * counts (ReasoningProgress is never emitted), so we count from text length
+     * so the number actually rises as the user chats.
+     */
+    private fun estimateTokens(text: String): Long = (text.trim().length / 4).toLong().coerceAtLeast(0L)
+
     private fun projectWorkspaceRoot(project: Project): File {
         val base = File(getApplication<Application>().filesDir, "workspaces/${project.id}")
             .apply { mkdirs() }
@@ -2695,6 +2703,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeChatId = chat.id,
                 activeChatMode = chat.mode,
                 chatModeLocked = false,
+                totalChats = it.totalChats + 1,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
                 liveProcess = emptyList(),
                 liveThinking = false,
@@ -2987,11 +2996,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateActiveChatTitle(requestText)
         _state.update {
             val startedAt = System.currentTimeMillis()
+            val promptTokens = estimateTokens(prompt.trim())
+            preferences.cumulativeTokens = preferences.cumulativeTokens + promptTokens
             it.copy(
                 messages = it.messages + ChatMessage(fromUser = true, text = prompt.trim(), attachments = attachments),
                 pendingAttachments = emptyList(),
                 isRunning = true,
                 chatModeLocked = true,
+                cumulativeTokens = preferences.cumulativeTokens,
                 activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + it.activity,
                 liveProcess = listOf(ActivityItem("Think", requestPlanningSummary(requestText, it.agentKind), false)),
                 liveThinking = true,
