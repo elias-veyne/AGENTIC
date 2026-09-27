@@ -12,7 +12,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 // Agentic glassmorphism palette (matches approved HTML demo)
-val AgenticBlue = Color(0xFF54CCFF)
 val AgenticBlue = Color(0xFF38BDF8)
 val AgenticViolet = Color(0xFFBAE6FD)
 val AgenticBg = Color(0xFF000000)
