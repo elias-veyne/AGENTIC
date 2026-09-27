@@ -115,9 +115,6 @@ private data class KeyConnectionStatus(
     val label: String = if (successful == true) "Verified" else "Failed",
 )
 
-/** Which API-key slot is shown in AgentScreen: Agent 1 (Head) or Agent 2. */
-private enum class AgentSlot { AGENT1, AGENT2 }
-
 /**
  * Dedicated Agent + AI connection hub.
  *
@@ -768,7 +765,7 @@ fun AgentScreen(
                 }
             }
 
-            // ── 1.5. Agent API-key slots: Agent 1 (Head) vs Agent 2 ──
+            // ── 1.5. Agent API-key slots: Head / Sub-Agent 1 / Sub-Agent 2 ──
             item {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
