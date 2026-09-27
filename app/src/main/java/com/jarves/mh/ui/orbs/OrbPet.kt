@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
@@ -71,6 +72,17 @@ fun OrbPet(
 
     Canvas(modifier = modifier) {
         val sizePx = minOf(size.width, size.height)
+        // Soft tinted glow behind the orb so it reads clearly on the dark canvas.
+        val glow = Brush.radialGradient(
+            colors = listOf(
+                Color(resolvedTint).copy(alpha = 0.22f),
+                Color(resolvedTint).copy(alpha = 0.06f),
+                Color.Transparent,
+            ),
+            center = center,
+            radius = sizePx * 0.6f,
+        )
+        drawRect(brush = glow, size = size)
         val frame = OrbFrames.frame(preset.mode, sizePx, t * preset.speed, preset.opts)
         drawFrame(frame, dark, resolvedTint)
     }
@@ -102,7 +114,7 @@ private fun inkColor(w: Float, alpha: Float, dark: Boolean, tint: Int): Int {
         val tr = ((tint shr 16) and 0xFF).toFloat()
         val tg = ((tint shr 8) and 0xFF).toFloat()
         val tb = (tint and 0xFF).toFloat()
-        fun ramp(c: Float) = if (dark) c * (1 - w) else c + (255 - c) * w
+        fun ramp(c: Float) = if (dark) c * (0.15f + 0.85f * w) else c + (255 - c) * w
         r = ramp(tr).toInt(); g = ramp(tg).toInt(); b = ramp(tb).toInt()
     }
     val ai = (alpha.coerceIn(0f, 1f) * 255).toInt()

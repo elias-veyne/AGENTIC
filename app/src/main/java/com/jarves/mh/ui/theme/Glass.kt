@@ -72,15 +72,24 @@ object Glass {
  * blooms on interaction, and a lift + press scale modeled on the CSS
  * transitions (`transform .25s cubic-bezier(.22,1,.36,1)`).
  *
- * On API 31+ the card blurs what's behind it (backdrop-filter equivalent);
- * older API levels fall back to the translucent layering alone.
+ * On API 31+ the card CAN blur what's behind it (backdrop-filter equivalent)
+ * when [blurred] is requested; by default it does not, because stacking a
+ * screen full of translucent 20dp-blurred cards reads as a hazy screen on-device.
+ * The translucent layering alone delivers the glass look.
  */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
     halo: Glass.Halo = Glass.Halo(),
     radius: Dp = Glass.RadiusCard,
-    blurred: Boolean = true,
+    /**
+     * Backdrop blur behind the card (backdrop-filter equivalent). Off by default:
+     * a 20dp blur over the near-black canvas, applied to every translucent card,
+     * read on-device as a whole-app haze. The approved glass look comes entirely
+     * from the translucent surface, hairline border, inner highlight and halo, so
+     * blur is optional and only where explicitly requested.
+     */
+    blurred: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {

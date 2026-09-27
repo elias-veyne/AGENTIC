@@ -3102,7 +3102,7 @@ private fun ProjectsScreen(
                         Spacer(Modifier.width(8.dp))
                         OrbPet(
                             state = OrbState.BREATHING,
-                            modifier = Modifier.size(width = 26.dp, height = 30.dp),
+                            modifier = Modifier.size(width = 42.dp, height = 46.dp),
                         )
                     }
                 },
