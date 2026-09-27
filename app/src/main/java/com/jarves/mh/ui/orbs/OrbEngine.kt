@@ -37,7 +37,7 @@ internal enum class OrbMode {
             OrbState.CONNECTING -> WEB
             OrbState.WEAVING -> BRAID
             OrbState.COMPOSING -> RIBBON
-            OrbState.BREATHING -> RING
+            OrbState.BREATHING -> WEB // wireframe orb mesh (matches AgenticOrbs pet look)
             OrbState.SHAPING -> MORPH
         }
     }
