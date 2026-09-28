@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -142,7 +143,7 @@ private const val TIP_SIZE = 12f
 private const val PET_CLOCK_SECONDS = 60f
 private const val TAU = 2f * PI.toFloat()
 
-private fun drawPet(state: PetState, glow: Int, fill: Int, t: Float) {
+private fun DrawScope.drawPet(state: PetState, glow: Int, fill: Int, t: Float) {
     val canvas = drawContext.canvas.nativeCanvas
     val w = size.width
     val h = size.height
@@ -185,7 +186,7 @@ private fun drawPet(state: PetState, glow: Int, fill: Int, t: Float) {
     canvas.restore()
 }
 
-private fun drawBody(canvas: android.graphics.Canvas, state: PetState, glow: Int, fill: Int, t: Float) {
+private fun DrawScope.drawBody(canvas: android.graphics.Canvas, state: PetState, glow: Int, fill: Int, t: Float) {
     val paint = android.graphics.Paint().apply { isAntiAlias = true }
     val path = eggPath(state, t)
 
@@ -224,7 +225,7 @@ private fun drawBody(canvas: android.graphics.Canvas, state: PetState, glow: Int
     canvas.restore()
 }
 
-private fun drawAntenna(canvas: android.graphics.Canvas, state: PetState, glow: Int, t: Float) {
+private fun DrawScope.drawAntenna(canvas: android.graphics.Canvas, state: PetState, glow: Int, t: Float) {
     val paint = android.graphics.Paint().apply { isAntiAlias = true }
     val cx = BODY_CX
 
@@ -269,7 +270,7 @@ private fun drawAntenna(canvas: android.graphics.Canvas, state: PetState, glow: 
     paint.setShadowLayer(0f, 0f, 0f, 0)
 }
 
-private fun drawEyes(canvas: android.graphics.Canvas, state: PetState, glow: Int, t: Float) {
+private fun DrawScope.drawEyes(canvas: android.graphics.Canvas, state: PetState, glow: Int, t: Float) {
     val big = state == PetState.AWAITING
     val baseW = if (big) EYE_W_BIG else EYE_W
     val baseH = if (big) EYE_H_BIG else EYE_H
@@ -328,7 +329,7 @@ private fun drawEyes(canvas: android.graphics.Canvas, state: PetState, glow: Int
     }
 }
 
-private fun drawEye(
+private fun DrawScope.drawEye(
     canvas: android.graphics.Canvas,
     glow: Int,
     cx: Float,
@@ -381,7 +382,7 @@ private fun drawEye(
     )
 }
 
-private fun drawFeet(canvas: android.graphics.Canvas, glow: Int, fill: Int) {
+private fun DrawScope.drawFeet(canvas: android.graphics.Canvas, glow: Int, fill: Int) {
     val paint = android.graphics.Paint().apply { isAntiAlias = true }
     val total = FOOT_W * 2f + FOOT_GAP
     for (side in -1..1 step 2) {
@@ -403,7 +404,7 @@ private fun drawFeet(canvas: android.graphics.Canvas, glow: Int, fill: Int) {
  * Build the egg outline, applying the morph keyframes (thinking / weaving)
  * by interpolating each corner radius.
  */
-private fun eggPath(state: PetState, t: Float): android.graphics.Path {
+private fun DrawScope.eggPath(state: PetState, t: Float): android.graphics.Path {
     val rx: FloatArray
     val ry: FloatArray
     when (state) {
