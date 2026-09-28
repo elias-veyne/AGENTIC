@@ -121,6 +121,10 @@ private data class RuntimeRetryRequest(
     val prompt: String,
     val history: List<ChatMessage>,
     val provider: ProviderProfile,
+    /** Non-null when a per-chat pinned key supplies the secret, bypassing the
+     *  vault's global active key so switching keys in one chat can't re-key
+     *  every other chat. */
+    val resolvedSecret: String? = null,
 )
 
 private data class TranscriptWrite(
@@ -999,12 +1003,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * [AppUiState.agent2Provider]/[AppUiState.agent2ActiveApiKeyName] in state.
      */
     fun saveAgent2Provider(profile: ProviderProfile, apiKey: String) {
-        if (apiKey.isNotBlank()) vault.put(profile.kind.name, apiKey)
+        // Scope to AGENT2 so this key never lands in the Head's per-provider pool.
+        if (apiKey.isNotBlank()) vault.put(AGENT2_SCOPE, profile.kind.name, apiKey)
         val saved = profile.copy(
-            hasSecret = apiKey.isNotBlank() || vault.contains(profile.kind.name),
+            hasSecret = apiKey.isNotBlank() || vault.contains(AGENT2_SCOPE, profile.kind.name),
         )
         preferences.saveAgent2Provider(saved)
-        val keys = vault.list(saved.kind.name)
+        val keys = vault.list(AGENT2_SCOPE, saved.kind.name)
         _state.update { current ->
             current.copy(
                 agent2Provider = saved,
@@ -1019,8 +1024,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * A blank [keyId] only refreshes Agent 2's active-key state.
      */
     fun setAgent2ActiveApiKey(kind: ProviderKind, keyId: String) {
-        if (keyId.isNotBlank()) vault.activate(kind.name, keyId)
-        val keys = vault.list(kind.name)
+        if (keyId.isNotBlank()) vault.activate(AGENT2_SCOPE, kind.name, keyId)
+        val keys = vault.list(AGENT2_SCOPE, kind.name)
         _state.update { current ->
             current.copy(
                 agent2ActiveApiKeyName = keys.firstOrNull(ApiKeyInfo::isActive)?.name,
@@ -1034,12 +1039,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * [AppUiState.agent3Provider]/[AppUiState.agent3ActiveApiKeyName] in state.
      */
     fun saveAgent3Provider(profile: ProviderProfile, apiKey: String) {
-        if (apiKey.isNotBlank()) vault.put(profile.kind.name, apiKey)
+        // Scope to AGENT3 so this key never lands in the Head's per-provider pool.
+        if (apiKey.isNotBlank()) vault.put(AGENT3_SCOPE, profile.kind.name, apiKey)
         val saved = profile.copy(
-            hasSecret = apiKey.isNotBlank() || vault.contains(profile.kind.name),
+            hasSecret = apiKey.isNotBlank() || vault.contains(AGENT3_SCOPE, profile.kind.name),
         )
         preferences.saveAgent3Provider(saved)
-        val keys = vault.list(saved.kind.name)
+        val keys = vault.list(AGENT3_SCOPE, saved.kind.name)
         _state.update { current ->
             current.copy(
                 agent3Provider = saved,
@@ -1053,8 +1059,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * [AppUiState.agent3Provider.hasSecret]/[AppUiState.agent3ActiveApiKeyName].
      */
     fun setAgent3ActiveApiKey(kind: ProviderKind, keyId: String) {
-        if (keyId.isNotBlank()) vault.activate(kind.name, keyId)
-        val keys = vault.list(kind.name)
+        if (keyId.isNotBlank()) vault.activate(AGENT3_SCOPE, kind.name, keyId)
+        val keys = vault.list(AGENT3_SCOPE, kind.name)
         _state.update { current ->
             current.copy(
                 agent3ActiveApiKeyName = keys.firstOrNull(ApiKeyInfo::isActive)?.name,
@@ -3010,12 +3016,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
         updateActiveChatTitle(requestText)
-        // Per-chat key pinning: if this chat is pinned to a specific saved key, activate
-        // it before sending so this chat uses its own key (multi-key support).
+        // Per-chat key pinning: if this chat is pinned to a specific saved key,
+        // resolve that key's secret here and carry it on the request. We must
+        // NOT call activateApiKey() — that writes the vault's *global* active
+        // key for the provider, which would silently re-key every other chat
+        // and every agent role.
         val pinned = state.value.activeChatKeyName
-        if (pinned != null && pinned != state.value.activeApiKeyName) {
-            val activeKind = state.value.provider.kind
-            activateApiKey(activeKind, pinned)
+        val pinnedSecret = pinned?.takeIf { it.isNotBlank() }?.let { name ->
+            vault.credentials(state.value.provider.kind.name)
+                .firstOrNull { it.name == name }?.secret
         }
         _state.update {
             val startedAt = System.currentTimeMillis()
@@ -3117,6 +3126,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         prompt = runtimePrompt,
                         history = history,
                         provider = state.value.provider,
+                        resolvedSecret = pinnedSecret,
                     )
                     activeRuntimeRequest?.let { request ->
                         request.runtime.startSession(
@@ -3126,6 +3136,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             request.prompt,
                             request.history,
                             request.provider,
+                            request.resolvedSecret,
                         )
                     }
                     val integrated = cooperative.jointIntegration(AgentId.peer("ui"), AgentId.peer("backend"))
@@ -3148,6 +3159,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     prompt = runtimePrompt,
                     history = history,
                     provider = state.value.provider,
+                    resolvedSecret = pinnedSecret,
                 )
                 viewModelScope.launch {
                     activeRuntimeRequest?.let { request ->
@@ -3158,6 +3170,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             request.prompt,
                             request.history,
                             request.provider,
+                            request.resolvedSecret,
                         )
                     }
                 }
@@ -3559,6 +3572,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             kotlinx.coroutines.delay(300)
+            // This is the key-failure retry: the vault's active key was just
+            // switched above, so re-read it rather than reuse the request's
+            // possibly-stale pinned secret.
             request.runtime.startSession(
                 request.project.id,
                 request.project.slug,
@@ -3566,6 +3582,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 request.prompt,
                 request.history,
                 request.provider,
+                resolvedSecret = vault.get(request.provider.kind.name),
             )
         }
         return true
@@ -3658,13 +3675,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // The head (Agent 1) decides the work; sub-agent shards are routed to each sub's own
         // provider key. Even subIndex → Sub-Agent 1 (agent2), odd → Sub-Agent 2 (agent3).
         // Fall back to Agent 1's provider whenever a sub has no usable key.
-        fun usable(p: ProviderProfile?) =
-            p != null && (p.hasSecret || p.dshApi.isNotBlank() || vault.get(p.kind.name) != null)
+        // Each role's key lives in its own scoped vault pool, so routing to a sub
+        // never changes the Head's active key.
+        fun usable(p: ProviderProfile?, scope: String) =
+            p != null && (p.hasSecret || p.dshApi.isNotBlank() || vault.get(scope, p.kind.name) != null)
         val routedProvider = when {
-            usable(agent2Provider) && usable(agent3Provider) ->
+            usable(agent2Provider, AGENT2_SCOPE) && usable(agent3Provider, AGENT3_SCOPE) ->
                 if (subIndex % 2 == 0) agent2Provider!! else agent3Provider!!
-            usable(agent2Provider) -> agent2Provider!!
-            usable(agent3Provider) -> agent3Provider!!
+            usable(agent2Provider, AGENT2_SCOPE) -> agent2Provider!!
+            usable(agent3Provider, AGENT3_SCOPE) -> agent3Provider!!
             else -> provider
         }
         val output = StringBuilder()
@@ -3695,6 +3714,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             instruction,
             history,
             routedProvider,
+            resolvedSecret = when (routedProvider) {
+                agent2Provider -> vault.get(AGENT2_SCOPE, routedProvider.kind.name)
+                agent3Provider -> vault.get(AGENT3_SCOPE, routedProvider.kind.name)
+                else -> null
+            },
         )
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
@@ -3796,5 +3820,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TEST_OPENROUTER_BASE_URL = "https://openrouter.ai/api"
         private const val TEST_OPENROUTER_MODEL = "stealth/ox-alpha"
         private val TASK_TIMEOUT = java.time.Duration.ofMinutes(5)
+
+        // Key-vault scopes. Each agent role keeps its own per-provider pool so
+        // reconfiguring one role never re-keys another (the vault is keyed by
+        // provider kind alone otherwise).
+        const val AGENT2_SCOPE = "agent2"
+        const val AGENT3_SCOPE = "agent3"
     }
 }

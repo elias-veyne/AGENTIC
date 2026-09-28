@@ -17,6 +17,14 @@ class ApiKeyVault(context: Context) {
     private val preferences = context.getSharedPreferences("pocket_secrets", Context.MODE_PRIVATE)
     private val alias = "pocket-provider-key"
 
+    /**
+     * Overwrites the *active* key's secret for [providerId].
+     *
+     * Prefer [add] or the scoped [put] below for anything other than the Head
+     * agent's own key. This writes into the shared per-provider pool, so a
+     * caller that reuses a provider kind already used by another agent role
+     * would silently clobber that role's active key.
+     */
     @Synchronized
     fun put(providerId: String, secret: String) {
         if (secret.isBlank()) return
@@ -28,6 +36,45 @@ class ApiKeyVault(context: Context) {
             putEncrypted(secretKey(providerId, active.id), secret)
         }
     }
+
+    /**
+     * Writes [secret] for [providerId] under an isolated [scope].
+     *
+     * Agent roles (Head / Agent 2 / Agent 3) each get their own pool per
+     * provider kind, so saving a sub-agent key for a provider the Head already
+     * uses no longer overwrites the Head's active key — the bug that used to
+     * silently re-key every agent when one was reconfigured.
+     */
+    @Synchronized
+    fun put(scope: String, providerId: String, secret: String) {
+        if (secret.isBlank()) return
+        val scopedId = scopedProviderId(scope, providerId)
+        val entries = ensurePool(scopedId)
+        val active = entries.firstOrNull { it.id == activeId(scopedId) } ?: entries.firstOrNull()
+        if (active == null) {
+            add(scopedId, "Primary", secret)
+        } else {
+            putEncrypted(secretKey(scopedId, active.id), secret)
+        }
+    }
+
+    /** Reads the active secret for [providerId] under an isolated [scope]. */
+    @Synchronized
+    fun get(scope: String, providerId: String): String? {
+        val scopedId = scopedProviderId(scope, providerId)
+        val active = list(scopedId).firstOrNull { it.isActive } ?: return null
+        return getEncrypted(secretKey(scopedId, active.id))
+    }
+
+    /** True when a usable key exists for [providerId] under [scope]. */
+    fun contains(scope: String, providerId: String): Boolean = get(scope, providerId) != null
+
+    /** Lists saved keys for [providerId] under an isolated [scope]. */
+    @Synchronized
+    fun list(scope: String, providerId: String): List<ApiKeyInfo> = list(scopedProviderId(scope, providerId))
+
+    private fun scopedProviderId(scope: String, providerId: String): String =
+        if (scope.isBlank()) providerId else "$scope.$providerId"
 
     @Synchronized
     fun add(providerId: String, name: String, secret: String): ApiKeyInfo {
@@ -63,6 +110,15 @@ class ApiKeyVault(context: Context) {
     fun activate(providerId: String, keyId: String): Boolean {
         if (ensurePool(providerId).none { it.id == keyId }) return false
         setActiveId(providerId, keyId)
+        return true
+    }
+
+    /** Activates a saved key for [providerId] under an isolated [scope]. */
+    @Synchronized
+    fun activate(scope: String, providerId: String, keyId: String): Boolean {
+        val scopedId = scopedProviderId(scope, providerId)
+        if (ensurePool(scopedId).none { it.id == keyId }) return false
+        setActiveId(scopedId, keyId)
         return true
     }
 
