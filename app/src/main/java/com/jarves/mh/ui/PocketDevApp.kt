@@ -191,7 +191,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.agent.AgentMode
-import com.jarves.mh.ui.chat.ModePills
 import com.jarves.mh.ui.chat.PeerGrid
 import com.jarves.mh.ui.chat.PeerStatus
 import com.jarves.mh.ui.chat.PlanCard
@@ -4716,9 +4715,9 @@ private fun AgentStatusDot(active: Boolean, tint: Color) {
 @Composable
 private fun LockedModeChip(mode: AgentMode) {
     val tint = when (mode) {
-        AgentMode.SIMPLE -> Color(0xFF54CCFF)
-        AgentMode.AGENTIC -> Color(0xFF7C6CFF)
-        AgentMode.COOPERATIVE -> Color(0xFF4CC2A8)
+        AgentMode.SIMPLE -> Color(0xFF38BDF8)
+        AgentMode.AGENTIC -> Color(0xFF7DD3FC)
+        AgentMode.COOPERATIVE -> Color(0xFF38BDF8)
     }
     Row(
         modifier = Modifier
@@ -4778,19 +4777,6 @@ private fun ChatTab(
         }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
-        if (!chatModeLocked) {
-            ChatModePickerCard(mode = agentMode, onChoose = onSwitchMode)
-        } else {
-            val doing = liveProcess.firstOrNull()?.title ?: if (isRunning) "Working…" else "Idle"
-            when (agentMode) {
-                AgentMode.AGENTIC -> AgentBoxesRow(
-                    "Sub-Agent 1", "Worker A", if (isRunning) judgeSubActivity(liveProcess, 0) else "Standing by", isRunning, Color(0xFF7C6CFF),
-                    "Sub-Agent 2", "Worker B", if (isRunning) judgeSubActivity(liveProcess, 1) else "Standing by", isRunning, Color(0xFF4CC2A8),
-                )
-                AgentMode.COOPERATIVE -> AgentBoxSingle("Sub-Agent", "Peer", doing, isRunning || thinkingActive, Color(0xFF4CC2A8))
-                else -> {}
-            }
-        }
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -4808,7 +4794,7 @@ private fun ChatTab(
                             message,
                             onRunInTerminal,
                             onOpenAttachment,
-                            showPet = isLastAgentMessage,
+                            showPet = !message.fromUser,
                             thinkingActive = thinkingActive,
                             liveProcess = liveProcess,
                             isRunning = isRunning,
@@ -4917,9 +4903,6 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                if (chatModeLocked) {
-                    LockedModeChip(agentMode)
-                }
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier

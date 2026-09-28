@@ -103,7 +103,7 @@ class AppPreferences(private val context: Context) {
 
     /** Accent color chosen in Settings → Appearance, as an ARGB Int (default cyan). */
     var accentColor: Int
-        get() = preferences.getInt("accent_color", 0xFF54CCFF.toInt())
+        get() = preferences.getInt("accent_color", 0xFF38BDF8.toInt())
         set(value) { preferences.edit().putInt("accent_color", value).apply() }
 
     /** Agent mode chosen during onboarding or from the composer mode pills. */

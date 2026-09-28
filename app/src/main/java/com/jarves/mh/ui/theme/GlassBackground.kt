@@ -24,14 +24,14 @@ fun GlassBackground(modifier: Modifier = Modifier) {
 
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF54CCFF).copy(alpha = 0.13f), Color.Transparent),
+                        colors = listOf(Color(0xFF38BDF8).copy(alpha = 0.13f), Color.Transparent),
                         center = Offset(size.width * 0.15f, size.height * -0.05f),
                         radius = size.maxDimension * 0.62f,
                     ),
                 )
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF7C6CFF).copy(alpha = 0.11f), Color.Transparent),
+                        colors = listOf(Color(0xFF7DD3FC).copy(alpha = 0.11f), Color.Transparent),
                         center = Offset(size.width * 0.9f, size.height * 1.05f),
                         radius = size.maxDimension * 0.58f,
                     ),

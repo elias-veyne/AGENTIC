@@ -29,7 +29,7 @@ object OrbTints {
     const val AWAITING = 0xFFA69EFF.toInt()
     const val WEAVING = 0xFFF5C2E7.toInt()
     const val PEER = 0xFFA69EFF.toInt()
-    const val PRIMARY = 0xFF54CCFF.toInt()
+    const val PRIMARY = 0xFF38BDF8.toInt()
 
     fun forState(state: OrbState): Int = when (state) {
         OrbState.BREATHING -> IDLE

@@ -130,7 +130,7 @@ fun PlanCard(subtasks: List<SubtaskChip>) {
             ) {
                 Box(
                     Modifier.size(10.dp).background(
-                        if (chip.done) Color(0xFF4CC2A8) else MaterialTheme.colorScheme.primary,
+                        if (chip.done) Color(0xFF38BDF8) else MaterialTheme.colorScheme.primary,
                         CircleShape,
                     ),
                 )
@@ -144,7 +144,7 @@ fun PlanCard(subtasks: List<SubtaskChip>) {
                 Text(
                     if (chip.done) "done" else "working",
                     fontSize = 10.sp,
-                    color = if (chip.done) Color(0xFF4CC2A8) else MaterialTheme.colorScheme.primary,
+                    color = if (chip.done) Color(0xFF38BDF8) else MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                 )
             }

@@ -248,7 +248,7 @@ data class AppUiState(
     val activeChatMode: AgentMode = AgentMode.SIMPLE,
     /** True once the user has picked a mode for the active chat (locked — no mid-chat switches). */
     val chatModeLocked: Boolean = false,
-    val accentColor: Int = 0xFF54CCFF.toInt(),
+    val accentColor: Int = 0xFF38BDF8.toInt(),
     /** Notification toggles (Settings → Notifications). Defaults mirror the demo. */
     val notifTaskAlerts: Boolean = true,
     val notifApprovalRequests: Boolean = true,
