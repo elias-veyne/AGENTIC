@@ -353,17 +353,17 @@ private fun SetupStep(
     var running by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        // Notifications and battery follow the demo's "tap a row" interaction.
         // The workspace row prepares on entry so the flow lands on Home ready.
+        // Notifications + battery are optional enhancements: a user who declines
+        // either one must still be able to finish onboarding, so completion
+        // waits only on the workspace.
         onPrepareWorkspace()
         workspaceDone = true
         notifDone = notificationsAllowed()
         batteryDone = batteryUnrestricted()
-        if (notifDone && batteryDone && workspaceDone) {
-            delay(500)
-            running = false
-            onSetupComplete()
-        }
+        delay(500)
+        running = false
+        onSetupComplete()
     }
 
     OnboardingScaffold(
@@ -374,11 +374,7 @@ private fun SetupStep(
             PrimaryButton(
                 text = if (running) "Finishing…" else "Start using Agentic",
                 enabled = !running,
-                onClick = {
-                    notifDone = notificationsAllowed()
-                    batteryDone = batteryUnrestricted()
-                    if (notifDone && batteryDone) onSetupComplete()
-                },
+                onClick = onSetupComplete,
             )
         },
     ) {
