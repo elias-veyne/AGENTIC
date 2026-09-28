@@ -40,7 +40,9 @@ object OrbTints {
         OrbState.COMPOSING -> COMPOSING
         OrbState.LISTENING -> AWAITING
         OrbState.WEAVING -> WEAVING
-        OrbState.SHAPING -> PRIMARY
+        // SHAPING has no dedicated mood; it must share IDLE's green so the orb
+        // and the pet always glow the same colour for a given activity.
+        OrbState.SHAPING -> IDLE
     }
 }
 

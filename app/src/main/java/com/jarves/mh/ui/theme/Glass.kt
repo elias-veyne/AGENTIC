@@ -227,6 +227,79 @@ fun GlassIconTile(
     }
 }
 
+// --- cyberpunk accents -------------------------------------------------
+
+/**
+ * A brighter, neon-edged glass for the home dashboard tiles. Same AMOLED black
+ * base and translucent surface, but with a visible blue hairline that traces
+ * the border, a soft outer bloom, and an inner scanline tint — the "little
+ * cyberpunk thing" on top of the glass, without changing the palette.
+ */
+@Composable
+fun NeonGlassCard(
+    modifier: Modifier = Modifier,
+    accent: Color = Glass.Primary,
+    radius: Dp = Glass.RadiusCard,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val pressed by interactionSource.collectIsPressedAsState()
+    val glow by animateFloatAsState(
+        targetValue = if (hovered || pressed) 1f else 0.45f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "neonGlow",
+    )
+    val shape = RoundedCornerShape(radius)
+    val base = modifier
+        .graphicsLayer { translationY = if (pressed) -2f else 0f }
+        .clip(shape)
+        .background(Glass.Surface)
+        .border(BorderStroke(1.dp, accent.copy(alpha = 0.55f)), shape)
+        .drawBehind {
+            // Outer neon bloom hugging the border.
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(accent.copy(alpha = 0.30f * glow), Color.Transparent),
+                    center = Offset(size.width * 0.5f, size.height * 0.5f),
+                    radius = size.maxDimension * 0.75f,
+                ),
+            )
+            // Inset top highlight.
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Glass.SurfaceInset.copy(alpha = 0.85f), Color.Transparent),
+                    startY = 0f,
+                    endY = size.height * 0.22f,
+                ),
+            )
+            // Scanline: one thin brighter band a third of the way down.
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, accent.copy(alpha = 0.07f), Color.Transparent),
+                    startY = size.height * 0.28f,
+                    endY = size.height * 0.38f,
+                ),
+            )
+        }
+        .shadow(
+            elevation = if (hovered) 20.dp else 10.dp,
+            shape = shape,
+            ambientColor = Color.Black.copy(alpha = 0.4f),
+            spotColor = accent.copy(alpha = 0.16f),
+        )
+    Box(
+        modifier = if (onClick != null) {
+            base.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+        } else {
+            base.hoverable(interactionSource)
+        },
+    ) {
+        content()
+    }
+}
+
 /**
  * The "blue text + white glow" half of the approved AMOLED spec.
  *

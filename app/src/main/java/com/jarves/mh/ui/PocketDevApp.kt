@@ -170,6 +170,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -242,6 +243,7 @@ import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
 import com.jarves.mh.ui.theme.GlassCard
 import com.jarves.mh.ui.theme.GlassIconTile
+import com.jarves.mh.ui.theme.NeonGlassCard
 import com.jarves.mh.ui.theme.PocketBlue
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
@@ -357,8 +359,6 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onStop = viewModel::stopTask,
             onApproval = viewModel::answerApproval,
             onSwitchMode = viewModel::selectChatMode,
-            onPinChatKey = viewModel::pinChatKey,
-            savedActiveKeys = viewModel.getSavedApiKeys(state.provider.kind).map { it.name },
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
@@ -2103,8 +2103,6 @@ private fun RootScreenHost(
                     onSaveProvider = { profile, key ->
                         viewModel.updateProvider(profile, key)
                     },
-                    onSaveAgent2Provider = viewModel::saveAgent2Provider,
-                    onSaveAgent3Provider = viewModel::saveAgent3Provider,
                     onDiscoverModels = viewModel::discoverModels,
                     onValidateProvider = viewModel::validateProvider,
                     onPing = viewModel::pingApi,
@@ -2979,22 +2977,20 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun StatCard(
     modifier: Modifier = Modifier,
-    halo: Glass.Halo,
-    tint1: Color,
-    tint2: Color,
+    accent: Color,
     icon: ImageVector,
     title: String,
     value: String,
     change: String? = null,
     changeDown: Boolean = false,
 ) {
-    GlassCard(
+    NeonGlassCard(
         modifier = modifier,
-        halo = halo,
+        accent = accent,
         onClick = null,
     ) {
         Column(Modifier.padding(13.dp, 12.dp)) {
-            GlassIconTile(tint1 = tint1, tint2 = tint2) {
+            GlassIconTile(tint1 = accent.copy(alpha = 0.24f), tint2 = accent.copy(alpha = 0.10f)) {
                 Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
             }
             Spacer(Modifier.height(10.dp))
@@ -3024,23 +3020,21 @@ private fun StatCard(
 @Composable
 private fun QuickActionCard(
     modifier: Modifier = Modifier,
-    halo: Glass.Halo,
-    tint1: Color,
-    tint2: Color,
+    accent: Color,
     icon: ImageVector,
     title: String,
     onClick: () -> Unit,
 ) {
-    GlassCard(
+    NeonGlassCard(
         modifier = modifier,
-        halo = halo,
+        accent = accent,
         onClick = onClick,
     ) {
         Column(
             Modifier.fillMaxWidth().padding(13.dp, 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            GlassIconTile(tint1 = tint1, tint2 = tint2) {
+            GlassIconTile(tint1 = accent.copy(alpha = 0.24f), tint2 = accent.copy(alpha = 0.10f)) {
                 Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
             }
             Spacer(Modifier.height(9.dp))
@@ -3155,27 +3149,21 @@ private fun ProjectsScreen(
                 ) {
                     StatCard(
                         modifier = Modifier.weight(1f),
-                        halo = Glass.BlueHalo,
-                        tint1 = Color(Glass.TileBlue.first),
-                        tint2 = Color(Glass.TileBlue.second),
+                        accent = Color(0xFF38BDF8),
                         icon = Icons.Default.Chat,
                         title = "Sessions",
                         value = state.totalChats.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
-                        halo = Glass.VioletHalo,
-                        tint1 = Color(Glass.TileIce.first),
-                        tint2 = Color(Glass.TileIce.second),
+                        accent = Color(0xFF7DD3FC),
                         icon = Icons.Default.SmartToy,
                         title = "Active Agents",
                         value = state.agentSessions.size.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
-                        halo = Glass.TealHalo,
-                        tint1 = Color(Glass.TileOk.first),
-                        tint2 = Color(Glass.TileOk.second),
+                        accent = Color(0xFF69D69E),
                         icon = Icons.Default.Bolt,
                         title = "Tokens",
                         value = formatTokens(state.cumulativeTokens),
@@ -3185,9 +3173,9 @@ private fun ProjectsScreen(
 
                 // GitHub connect card from the approved demo.
                 SectionLabel("Account")
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    halo = Glass.VioletHalo,
+                    accent = Color(0xFF7DD3FC),
                     onClick = { showGitHubDialog = true },
                 ) {
                     Row(
@@ -3225,27 +3213,21 @@ private fun ProjectsScreen(
                 ) {
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
-                        halo = Glass.BlueHalo,
-                        tint1 = Color(Glass.TileBlue.first),
-                        tint2 = Color(Glass.TileBlue.second),
+                        accent = Color(0xFF38BDF8),
                         icon = Icons.Default.Add,
                         title = "New Chat",
                         onClick = onCreateQuickProject,
                     )
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
-                        halo = Glass.VioletHalo,
-                        tint1 = Color(Glass.TileIce.first),
-                        tint2 = Color(Glass.TileIce.second),
+                        accent = Color(0xFF7DD3FC),
                         icon = Icons.Default.History,
                         title = "History",
                         onClick = { /* scroll to recent chats */ },
                     )
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
-                        halo = Glass.TealHalo,
-                        tint1 = Color(Glass.TileOk.first),
-                        tint2 = Color(Glass.TileOk.second),
+                        accent = Color(0xFF69D69E),
                         icon = Icons.Default.Group,
                         title = "Cooperate",
                         onClick = { /* switch to cooperative mode */ },
@@ -3980,8 +3962,6 @@ private fun WorkspaceScreen(
     onStop: () -> Unit,
     onApproval: (Boolean) -> Unit,
     onSwitchMode: (AgentMode) -> Unit,
-    onPinChatKey: (String) -> Unit = {},
-    savedActiveKeys: List<String> = emptyList(),
     onRefreshFiles: () -> Unit,
     onOpenFile: (WorkspaceEntry) -> Unit,
     onCloseFile: () -> Unit,
@@ -4064,10 +4044,10 @@ private fun WorkspaceScreen(
         state.liveProcess.lastOrNull()?.detail,
         state.pendingApproval,
     ) {
-        if (!state.isRunning || chatItemCount <= 0 || userScrolledUp || chatListState.isScrollInProgress) return@LaunchedEffect
-        if (!chatListState.canScrollForward) {
-            chatListState.scrollToItem(chatItemCount - 1)
-        }
+        if (chatItemCount <= 0 || userScrolledUp || chatListState.isScrollInProgress) return@LaunchedEffect
+        // Snap to the newest item whenever content grows — the user's own
+        // message, streaming tokens, or the agent's finished reply.
+        chatListState.scrollToItem(chatItemCount - 1)
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
@@ -4150,7 +4130,7 @@ private fun WorkspaceScreen(
                             ),
                         )
                         Text(
-                            "${activeChat?.title ?: "Chat"} · ${state.provider.kind.title}",
+                            activeChat?.title ?: "Chat",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -4225,9 +4205,6 @@ private fun WorkspaceScreen(
                     agentMode = state.activeChatMode,
                     chatModeLocked = state.chatModeLocked,
                     onSwitchMode = onSwitchMode,
-                    activeKeyName = state.activeChatKeyName ?: state.activeApiKeyName,
-                    savedActiveKeys = savedActiveKeys,
-                    onPinKey = onPinChatKey,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
@@ -4766,9 +4743,6 @@ private fun ChatTab(
     agentMode: AgentMode = AgentMode.SIMPLE,
     chatModeLocked: Boolean = false,
     onSwitchMode: (AgentMode) -> Unit = {},
-    activeKeyName: String? = null,
-    savedActiveKeys: List<String> = emptyList(),
-    onPinKey: ((String) -> Unit)? = null,
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
@@ -4920,13 +4894,6 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                if (onPinKey != null && savedActiveKeys.isNotEmpty()) {
-                    ChatComposerKeyRow(
-                        activeKey = activeKeyName,
-                        savedKeys = savedActiveKeys,
-                        onPinKey = onPinKey,
-                    )
-                }
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier
@@ -4947,171 +4914,130 @@ private fun ChatTab(
 
                 val canSend = prompt.isNotBlank() || pendingAttachments.isNotEmpty()
 
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    halo = if (canSend) Glass.BlueHalo else Glass.Halo(g1 = Color(0x2938BDF8.toInt()), g2 = Color(0x1A38BDF8.toInt())),
-                    radius = 26.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.Bottom,
-                    ) {
-                        IconButton(
-                            onClick = onAttach,
-                            enabled = !isRunning && pendingAttachments.size < 5,
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Attach files",
-                                modifier = Modifier.size(20.dp),
-                                tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                ChatComposerCapsule(
+                    prompt = prompt,
+                    onPromptChange = { prompt = it },
+                    onAttach = onAttach,
+                    onSend = {
+                        if (canSend) {
+                            onSend(prompt)
+                            prompt = ""
                         }
-
-                        BasicTextField(
-                            value = prompt,
-                            onValueChange = { prompt = it },
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp, vertical = 10.dp)
-                                .heightIn(min = 20.dp, max = 130.dp),
-                            textStyle = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                            decorationBox = { innerTextField ->
-                                Box(contentAlignment = Alignment.CenterStart) {
-                                    if (prompt.isEmpty()) {
-                                        Text(
-                                            text = "Message ${agentKind.title}…",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 15.sp,
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            },
-                        )
-
-                        Spacer(Modifier.width(4.dp))
-
-                        if (isRunning) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.error,
-                                        shape = CircleShape,
-                                    )
-                                    .clickable(onClick = onStop),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Stop,
-                                    contentDescription = "Stop AI task",
-                                    tint = MaterialTheme.colorScheme.onError,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        color = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = CircleShape,
-                                    )
-                                    .clickable(
-                                        enabled = canSend,
-                                        onClick = {
-                                            if (canSend) {
-                                                onSend(prompt)
-                                                prompt = ""
-                                            }
-                                        },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(19.dp),
-                                )
-                            }
-                        }
-                    }
-                }
+                    },
+                    onStop = onStop,
+                    canSend = canSend,
+                    isRunning = isRunning,
+                    attachEnabled = !isRunning && pendingAttachments.size < 5,
+                    placeholder = "Message…",
+                )
             }
         }
     }
 }
 
-/** Per-chat key picker: shows which saved API key this chat uses; tap to switch to another saved key. */
+/**
+ * Instagram-DM-style composer: a single rounded capsule that grows with the
+ * text, an attach button on the left, and a circular send button on the right.
+ */
 @Composable
-private fun ChatComposerKeyRow(
-    activeKey: String?,
-    savedKeys: List<String>,
-    onPinKey: (String) -> Unit,
+private fun ChatComposerCapsule(
+    prompt: String,
+    onPromptChange: (String) -> Unit,
+    onAttach: () -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    canSend: Boolean,
+    isRunning: Boolean,
+    attachEnabled: Boolean,
+    placeholder: String,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val current = activeKey?.takeIf { it in savedKeys } ?: "Default key"
-    Row(
-        Modifier
+    Box(
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(28.dp))
+            .background(Glass.Surface)
+            .border(1.dp, if (canSend) Glass.Primary.copy(alpha = 0.45f) else Glass.Border, RoundedCornerShape(28.dp)),
     ) {
-        Icon(
-            imageVector = Icons.Default.Key,
-            contentDescription = null,
-            tint = Glass.Primary,
-            modifier = Modifier.size(13.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text("Key:", fontSize = 11.sp, color = Glass.TextMuted)
-        Spacer(Modifier.width(6.dp))
         Row(
-            Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(Glass.Surface.copy(alpha = 0.6f))
-                .border(1.dp, Glass.Border, RoundedCornerShape(8.dp))
-                .clickable { expanded = !expanded }
-                .padding(horizontal = 8.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.Bottom,
         ) {
-            Text(current, fontSize = 11.sp, color = Glass.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.width(4.dp))
-            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Glass.TextMuted, modifier = Modifier.size(14.dp))
-        }
-        Spacer(Modifier.weight(1f))
-        Text("per chat", fontSize = 10.sp, color = Glass.TextMuted)
-    }
-    if (expanded) {
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            savedKeys.forEach { key ->
-                DropdownMenuItem(
-                    text = { Text(key, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    onClick = {
-                        expanded = false
-                        onPinKey(key)
-                    },
+            IconButton(onClick = onAttach, enabled = attachEnabled, modifier = Modifier.size(42.dp)) {
+                Icon(
+                    imageVector = Icons.Default.AttachFile,
+                    contentDescription = "Attach files",
+                    modifier = Modifier.size(21.dp),
+                    tint = if (prompt.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Default key", color = Glass.TextMuted) },
-                onClick = {
-                    expanded = false
-                    onPinKey("")
+            BasicTextField(
+                value = prompt,
+                onValueChange = onPromptChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 2.dp)
+                    // Grows with content up to ~5 lines, then scrolls internally.
+                    .heightIn(min = 30.dp, max = 150.dp)
+                    .verticalScroll(rememberScrollState()),
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (prompt.isEmpty()) {
+                            Text(
+                                text = placeholder,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 15.sp,
+                            )
+                        }
+                        innerTextField()
+                    }
                 },
             )
+            Spacer(Modifier.width(2.dp))
+            if (isRunning) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(MaterialTheme.colorScheme.error, CircleShape)
+                        .clickable(onClick = onStop),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop AI task",
+                        tint = MaterialTheme.colorScheme.onError,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(
+                            Brush.linearGradient(
+                                colors = if (canSend) listOf(Color(0xFF38BDF8), Color(0xFF7DD3FC)) else listOf(Glass.Surface, Glass.Surface),
+                            ),
+                            shape = CircleShape,
+                        )
+                        .clickable(enabled = canSend, onClick = onSend),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowUpward,
+                        contentDescription = "Send",
+                        tint = if (canSend) Color(0xFF04121F) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -5461,68 +5387,148 @@ private fun MessageBubble(
     liveProcess: List<ActivityItem> = emptyList(),
     isRunning: Boolean = false,
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
-            halo = if (message.fromUser) Glass.BlueHalo else Glass.Halo(g1 = Color(0x2938BDF8.toInt()), g2 = Color(0x1A7DD3FC.toInt())),
-            radius = 18.dp,
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start,
+    ) {
+        if (message.fromUser) {
+            DmBubbleUser(message)
+        } else {
+            DmBubbleAgent(
+                message = message,
+                onRunInTerminal = onRunInTerminal,
+                onOpenAttachment = onOpenAttachment,
+                // The orb/pet pair only rides the bubble while the agent is
+                // actively working THIS message; once it lands they vanish.
+                showOrb = showPet && isRunning && (thinkingActive || liveProcess.any { !it.isComplete }),
+                thinkingActive = thinkingActive,
+                liveProcess = liveProcess,
+                isRunning = isRunning,
+            )
+        }
+    }
+}
+
+/**
+ * Instagram-DM-style outgoing bubble: right-aligned, blue gradient, tight tail
+ * corner bottom-right. Plain text (no markdown) like a chat app.
+ */
+@Composable
+private fun DmBubbleUser(message: ChatMessage) {
+    Column(
+        modifier = Modifier.fillMaxWidth(0.8f),
+        horizontalAlignment = Alignment.End,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 5.dp,
+                    ),
+                )
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF38BDF8), Color(0xFF7DD3FC)),
+                        start = Offset(0f, 0f),
+                        end = Offset(200f, 160f),
+                    ),
+                )
+                .padding(horizontal = 13.dp, vertical = 9.dp),
         ) {
-            Column(Modifier.padding(top = 12.dp)) {
-                SelectionContainer {
-                    if (message.fromUser) {
-                        Text(
-                            text = message.text,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    } else {
-                        MarkdownText(
-                            markdown = message.text,
-                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            onRunCode = onRunInTerminal,
-                        )
-                    }
+            SelectionContainer {
+                Text(
+                    text = message.text,
+                    color = Color(0xFF04121F),
+                    fontSize = 14.5.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+        if (message.attachments.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                message.attachments.forEach { attachment ->
+                    AttachmentChip(attachment = attachment, onOpen = null, onRemove = null)
                 }
-                if (!message.fromUser && message.workedMillis > 0L) {
+            }
+        }
+    }
+}
+
+/**
+ * Instagram-DM-style incoming bubble: left-aligned, translucent glass with a
+ * sharp tail corner bottom-left. Renders markdown (it's code output) and the
+ * working orb + pet while the agent is still producing this answer.
+ */
+@Composable
+private fun DmBubbleAgent(
+    message: ChatMessage,
+    onRunInTerminal: (String) -> Unit,
+    onOpenAttachment: (ChatAttachment) -> Unit,
+    showOrb: Boolean,
+    thinkingActive: Boolean,
+    liveProcess: List<ActivityItem>,
+    isRunning: Boolean,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(0.9f),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 18.dp, topEnd = 18.dp, bottomStart = 5.dp, bottomEnd = 18.dp,
+                    ),
+                )
+                .background(Glass.Surface)
+                .border(1.dp, Glass.Border, RoundedCornerShape(18.dp, 18.dp, 5.dp, 18.dp)),
+        ) {
+            Column(Modifier.padding(start = 13.dp, end = 13.dp, top = 10.dp, bottom = 9.dp)) {
+                SelectionContainer {
+                    MarkdownText(
+                        markdown = message.text,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        onRunCode = onRunInTerminal,
+                    )
+                }
+                if (message.workedMillis > 0L) {
                     Text(
                         text = "Worked for ${formatDuration((message.workedMillis / 1_000L).coerceAtLeast(1L))}",
-                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 5.dp),
+                        color = Glass.TextMuted,
+                        fontSize = 10.5.sp,
                     )
                 }
                 if (message.attachments.isNotEmpty()) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
+                    Spacer(Modifier.height(6.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         message.attachments.forEach { attachment ->
                             AttachmentChip(attachment = attachment, onOpen = { onOpenAttachment(attachment) }, onRemove = null)
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
             }
-            if (showPet) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 10.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    val petState = PetState.fromOrbState(
-                        orbStateForActivity(thinkingActive, liveProcess, isRunning),
-                    )
-                    AgentPet(
-                        state = petState,
-                        modifier = Modifier.size(width = 40.dp, height = 44.dp),
-                    )
-                    OrbPet(
-                        state = orbStateForActivity(thinkingActive, liveProcess, isRunning),
-                        modifier = Modifier.size(width = 40.dp, height = 44.dp),
-                    )
-                }
+        }
+        if (showOrb) {
+            Row(
+                modifier = Modifier.padding(start = 6.dp, top = 4.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                val orbState = orbStateForActivity(thinkingActive, liveProcess, isRunning)
+                AgentPet(
+                    state = PetState.fromOrbState(orbState),
+                    modifier = Modifier.size(width = 34.dp, height = 38.dp),
+                )
+                OrbPet(
+                    state = orbState,
+                    modifier = Modifier.size(width = 34.dp, height = 38.dp),
+                )
             }
         }
     }

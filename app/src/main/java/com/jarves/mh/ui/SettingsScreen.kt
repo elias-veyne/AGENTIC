@@ -98,6 +98,8 @@ import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
 import com.jarves.mh.ui.theme.GlassCard
+import com.jarves.mh.ui.theme.GlowText
+import com.jarves.mh.ui.theme.NeonGlassCard
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 import kotlinx.coroutines.launch
@@ -220,7 +222,7 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Visibility,
                 )
                 Spacer(Modifier.height(10.dp))
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
                 ) {
@@ -262,7 +264,7 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Code,
                 )
                 Spacer(Modifier.height(10.dp))
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
                 ) {
@@ -390,7 +392,7 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Link,
                 )
                 Spacer(Modifier.height(10.dp))
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
                 ) {
@@ -430,7 +432,7 @@ private fun LegacySettingsScreen(
                 Spacer(Modifier.height(10.dp))
 
                 // Current Live Status Card
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
                 ) {
@@ -744,7 +746,7 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Terminal,
                 )
                 Spacer(Modifier.height(10.dp))
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
                 ) {
@@ -868,7 +870,7 @@ private fun LegacySettingsScreen(
                     icon = Icons.Default.Settings,
                 )
                 Spacer(Modifier.height(10.dp))
-                GlassCard(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
                 ) {
@@ -904,19 +906,26 @@ private fun LegacySettingsScreen(
 @Composable
 private fun SectionHeader(title: String, subtitle: String, icon: ImageVector) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = PocketOrange.copy(alpha = 0.12f),
-            modifier = Modifier.size(36.dp),
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Glass.Surface)
+                .border(1.dp, Glass.Primary.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = PocketOrange, modifier = Modifier.size(18.dp))
-            }
+            Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(10.dp))
         Column {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            GlowText(
+                text = title,
+                style = androidx.compose.ui.text.TextStyle(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                ),
+            )
+            Text(subtitle, fontSize = 12.sp, color = Glass.TextMuted)
         }
     }
 }
