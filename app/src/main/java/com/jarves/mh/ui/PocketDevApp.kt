@@ -232,8 +232,10 @@ import com.jarves.mh.network.ConnectionValidation
 import com.jarves.mh.network.DiscoveredModel
 import com.jarves.mh.network.ModelDiscoveryResult
 import com.jarves.mh.network.GitHubRepository
+import com.jarves.mh.ui.orbs.AgentPet
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.orbs.PetState
 import com.jarves.mh.ui.onboarding.DemoOnboarding
 import com.jarves.mh.ui.orbs.orbStateForActivity
 import com.jarves.mh.ui.theme.Glass
@@ -3120,9 +3122,13 @@ private fun ProjectsScreen(
                         Spacer(Modifier.width(7.dp))
                         Text("Agentic", fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
+                        AgentPet(
+                            state = PetState.IDLE,
+                            modifier = Modifier.size(width = 30.dp, height = 34.dp),
+                        )
                         OrbPet(
                             state = OrbState.BREATHING,
-                            modifier = Modifier.size(width = 42.dp, height = 46.dp),
+                            modifier = Modifier.size(width = 30.dp, height = 34.dp),
                         )
                     }
                 },
@@ -5503,10 +5509,18 @@ private fun MessageBubble(
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(start = 10.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    val petState = PetState.fromOrbState(
+                        orbStateForActivity(thinkingActive, liveProcess, isRunning),
+                    )
+                    AgentPet(
+                        state = petState,
+                        modifier = Modifier.size(width = 40.dp, height = 44.dp),
+                    )
                     OrbPet(
                         state = orbStateForActivity(thinkingActive, liveProcess, isRunning),
-                        modifier = Modifier.size(width = 48.dp, height = 54.dp),
+                        modifier = Modifier.size(width = 40.dp, height = 44.dp),
                     )
                 }
             }
