@@ -102,6 +102,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.North
 import androidx.compose.material.icons.filled.South
@@ -355,7 +356,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onApproval = viewModel::answerApproval,
             onSwitchMode = viewModel::selectChatMode,
             onPinChatKey = viewModel::pinChatKey,
-            savedActiveKeys = viewModel.getSavedApiKeys(state.agentKind.provider).map { it.name },
+            savedActiveKeys = viewModel.getSavedApiKeys(state.agentKind).map { it.name },
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
@@ -5097,7 +5098,7 @@ private fun ChatComposerKeyRow(
                     },
                 )
             }
-            Divider()
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("Default key", color = Glass.TextMuted) },
                 onClick = {
