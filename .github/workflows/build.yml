@@ -2,7 +2,7 @@ name: Build and test
 
 on:
   push:
-    branches: [ main, work/ui-restructure ]
+    branches: [ main, work/ui-restructure, work/amoled-theme-orbs ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -32,8 +32,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
-          restore-keys: gradle-${{ runner.os }}-
+          key: gradle-\${{ runner.os }}-\${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-\${{ runner.os }}-
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
