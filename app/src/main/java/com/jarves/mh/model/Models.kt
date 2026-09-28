@@ -316,6 +316,8 @@ data class ProjectChat(
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis(),
     val mode: com.jarves.mh.agent.AgentMode = com.jarves.mh.agent.AgentMode.SIMPLE,
+    /** Name of the API key this chat is pinned to (from the saved-keys vault). */
+    val keyName: String? = null,
 )
 
 /**

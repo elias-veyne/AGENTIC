@@ -406,6 +406,7 @@ class AppPreferences(private val context: Context) {
                 put("createdAtMillis", chat.createdAtMillis)
                 put("updatedAtMillis", chat.updatedAtMillis)
                 put("mode", chat.mode.name)
+                chat.keyName?.let { put("keyName", it) }
             })
         }
         File(projectDir, "index.json").writeText(arr.toString())
@@ -426,6 +427,7 @@ class AppPreferences(private val context: Context) {
                         updatedAtMillis = obj.optLong("updatedAtMillis", System.currentTimeMillis()),
                         mode = runCatching { AgentMode.valueOf(obj.optString("mode", "SIMPLE")) }
                             .getOrDefault(AgentMode.SIMPLE),
+                        keyName = obj.optString("keyName", null),
                     )
                 }.sortedByDescending { it.updatedAtMillis }
             }.getOrDefault(emptyList())

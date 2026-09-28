@@ -148,6 +148,8 @@ data class AppUiState(
     val backgroundSetupComplete: Boolean = false,
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
+    /** Saved-key name pinned to the active chat (per-chat API key). */
+    val activeChatKeyName: String? = null,
     /** Independent second agent (Agent 2) used by Agentic mode / cooperative peers. */
     val agent2Provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val agent2ActiveApiKeyName: String? = null,
@@ -2702,6 +2704,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 projectChats = chats,
                 activeChatId = chat.id,
                 activeChatMode = chat.mode,
+                activeChatKeyName = chat.keyName,
                 chatModeLocked = false,
                 totalChats = it.totalChats + 1,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
@@ -2752,6 +2755,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 activeChatId = chat.id,
                 activeChatMode = chat.mode,
+                activeChatKeyName = chat.keyName,
                 chatModeLocked = saved.any { it.fromUser } || saved.any { !it.fromUser },
                 messages = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) },
                 liveProcess = emptyList(),
@@ -2764,8 +2768,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshProjectFiles() {
-        val project = _state.value.activeProject ?: return
+    /** Pins the active chat to a specific saved API key, so different chats/projects
+     *  can each use their own key. */
+    fun pinChatKey(keyName: String?) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        val chatId = current.activeChatId ?: return
+        val updatedChats = current.projectChats.map {
+            if (it.id == chatId) it.copy(keyName = keyName) else it
+        }
+        preferences.saveProjectChats(project.id, updatedChats)
+        _state.update { it.copy(projectChats = updatedChats, activeChatKeyName = keyName) }
+    }
+
+    fun refreshProjectFiles() {        val project = _state.value.activeProject ?: return
         _state.update { it.copy(filesLoading = true) }
         viewModelScope.launch {
             val (entries, suggestedRoot, androidProjectDetected) = withContext(Dispatchers.IO) {
@@ -2994,6 +3010,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
         updateActiveChatTitle(requestText)
+        // Per-chat key pinning: if this chat is pinned to a specific saved key, activate
+        // it before sending so this chat uses its own key (multi-key support).
+        val pinned = state.value.activeChatKeyName
+        if (pinned != null && pinned != state.value.activeApiKeyName) {
+            val activeKind = state.value.provider.kind
+            activateApiKey(activeKind, pinned)
+        }
         _state.update {
             val startedAt = System.currentTimeMillis()
             val promptTokens = estimateTokens(prompt.trim())

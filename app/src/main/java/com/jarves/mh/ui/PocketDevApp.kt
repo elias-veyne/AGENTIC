@@ -354,6 +354,8 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onStop = viewModel::stopTask,
             onApproval = viewModel::answerApproval,
             onSwitchMode = viewModel::selectChatMode,
+            onPinChatKey = viewModel::pinChatKey,
+            savedActiveKeys = viewModel.getSavedApiKeys(state.agentKind.provider).map { it.name },
             onRefreshFiles = viewModel::refreshProjectFiles,
             onOpenFile = viewModel::openFile,
             onCloseFile = viewModel::closeFile,
@@ -3971,6 +3973,8 @@ private fun WorkspaceScreen(
     onStop: () -> Unit,
     onApproval: (Boolean) -> Unit,
     onSwitchMode: (AgentMode) -> Unit,
+    onPinChatKey: (String) -> Unit = {},
+    savedActiveKeys: List<String> = emptyList(),
     onRefreshFiles: () -> Unit,
     onOpenFile: (WorkspaceEntry) -> Unit,
     onCloseFile: () -> Unit,
@@ -4214,6 +4218,9 @@ private fun WorkspaceScreen(
                     agentMode = state.activeChatMode,
                     chatModeLocked = state.chatModeLocked,
                     onSwitchMode = onSwitchMode,
+                    activeKeyName = state.activeChatKeyName ?: state.activeApiKeyName,
+                    savedActiveKeys = savedActiveKeys,
+                    onPinKey = onPinChatKey,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
@@ -4752,6 +4759,9 @@ private fun ChatTab(
     agentMode: AgentMode = AgentMode.SIMPLE,
     chatModeLocked: Boolean = false,
     onSwitchMode: (AgentMode) -> Unit = {},
+    activeKeyName: String? = null,
+    savedActiveKeys: List<String> = emptyList(),
+    onPinKey: ((String) -> Unit)? = null,
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
@@ -4903,6 +4913,13 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
+                if (onPinKey != null && savedActiveKeys.isNotEmpty()) {
+                    ChatComposerKeyRow(
+                        activeKey = activeKeyName,
+                        savedKeys = savedActiveKeys,
+                        onPinKey = onPinKey,
+                    )
+                }
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier
@@ -5025,6 +5042,69 @@ private fun ChatTab(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Per-chat key picker: shows which saved API key this chat uses; tap to switch to another saved key. */
+@Composable
+private fun ChatComposerKeyRow(
+    activeKey: String?,
+    savedKeys: List<String>,
+    onPinKey: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val current = activeKey?.takeIf { it in savedKeys } ?: "Default key"
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Key,
+            contentDescription = null,
+            tint = Glass.Primary,
+            modifier = Modifier.size(13.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text("Key:", fontSize = 11.sp, color = Glass.TextMuted)
+        Spacer(Modifier.width(6.dp))
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Glass.Surface.copy(alpha = 0.6f))
+                .border(1.dp, Glass.Border, RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(current, fontSize = 11.sp, color = Glass.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Glass.TextMuted, modifier = Modifier.size(14.dp))
+        }
+        Spacer(Modifier.weight(1f))
+        Text("per chat", fontSize = 10.sp, color = Glass.TextMuted)
+    }
+    if (expanded) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            savedKeys.forEach { key ->
+                DropdownMenuItem(
+                    text = { Text(key, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = {
+                        expanded = false
+                        onPinKey(key)
+                    },
+                )
+            }
+            Divider()
+            DropdownMenuItem(
+                text = { Text("Default key", color = Glass.TextMuted) },
+                onClick = {
+                    expanded = false
+                    onPinKey("")
+                },
+            )
         }
     }
 }
