@@ -3150,8 +3150,8 @@ private fun ProjectsScreen(
                     StatCard(
                         modifier = Modifier.weight(1f),
                         halo = Glass.BlueHalo,
-                        tint1 = Color(0x3D54CCFF),
-                        tint2 = Color(0x1A54CCFF),
+                        tint1 = Color(Glass.TileBlue.first),
+                        tint2 = Color(Glass.TileBlue.second),
                         icon = Icons.Default.Chat,
                         title = "Sessions",
                         value = state.totalChats.toString(),
@@ -3159,8 +3159,8 @@ private fun ProjectsScreen(
                     StatCard(
                         modifier = Modifier.weight(1f),
                         halo = Glass.VioletHalo,
-                        tint1 = Color(0x3D7C6CFF),
-                        tint2 = Color(0x1A7C6CFF),
+                        tint1 = Color(Glass.TileIce.first),
+                        tint2 = Color(Glass.TileIce.second),
                         icon = Icons.Default.SmartToy,
                         title = "Active Agents",
                         value = state.agentSessions.size.toString(),
@@ -3168,8 +3168,8 @@ private fun ProjectsScreen(
                     StatCard(
                         modifier = Modifier.weight(1f),
                         halo = Glass.TealHalo,
-                        tint1 = Color(0x3D4CC2A8),
-                        tint2 = Color(0x1A54CCFF),
+                        tint1 = Color(Glass.TileOk.first),
+                        tint2 = Color(Glass.TileOk.second),
                         icon = Icons.Default.Bolt,
                         title = "Tokens",
                         value = formatTokens(state.cumulativeTokens),
@@ -3189,8 +3189,8 @@ private fun ProjectsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         GlassIconTile(
-                            tint1 = Color(0x2954CCFF),
-                            tint2 = Color(0x1A7C6CFF),
+                            tint1 = Color(Glass.TileBlue.first),
+                            tint2 = Color(Glass.TileBlue.second),
                         ) {
                             Icon(Icons.Default.Code, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
                         }
@@ -3220,8 +3220,8 @@ private fun ProjectsScreen(
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
                         halo = Glass.BlueHalo,
-                        tint1 = Color(0x3D54CCFF),
-                        tint2 = Color(0x1F7C6CFF),
+                        tint1 = Color(Glass.TileBlue.first),
+                        tint2 = Color(Glass.TileBlue.second),
                         icon = Icons.Default.Add,
                         title = "New Chat",
                         onClick = onCreateQuickProject,
@@ -3229,8 +3229,8 @@ private fun ProjectsScreen(
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
                         halo = Glass.VioletHalo,
-                        tint1 = Color(0x3D7C6CFF),
-                        tint2 = Color(0x1A7C6CFF),
+                        tint1 = Color(Glass.TileIce.first),
+                        tint2 = Color(Glass.TileIce.second),
                         icon = Icons.Default.History,
                         title = "History",
                         onClick = { /* scroll to recent chats */ },
@@ -3238,8 +3238,8 @@ private fun ProjectsScreen(
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
                         halo = Glass.TealHalo,
-                        tint1 = Color(0x3D4CC2A8),
-                        tint2 = Color(0x1A54CCFF),
+                        tint1 = Color(Glass.TileOk.first),
+                        tint2 = Color(Glass.TileOk.second),
                         icon = Icons.Default.Group,
                         title = "Cooperate",
                         onClick = { /* switch to cooperative mode */ },
@@ -3417,7 +3417,7 @@ private fun ProjectsScreen(
                             modifier = Modifier.fillMaxWidth().padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            GlassIconTile(tint1 = Color(0x2954CCFF), tint2 = Color(0x1A7C6CFF)) {
+                            GlassIconTile(tint1 = Color(Glass.TileBlue.first), tint2 = Color(Glass.TileBlue.second)) {
                                 Icon(Icons.Default.Chat, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
                             }
                             Spacer(Modifier.width(12.dp))
@@ -4943,7 +4943,7 @@ private fun ChatTab(
 
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    halo = if (canSend) Glass.BlueHalo else Glass.Halo(g1 = Color(0x297C6CFF.toInt()), g2 = Color(0x1A54CCFF.toInt())),
+                    halo = if (canSend) Glass.BlueHalo else Glass.Halo(g1 = Color(0x2938BDF8.toInt()), g2 = Color(0x1A38BDF8.toInt())),
                     radius = 26.dp,
                 ) {
                     Row(
@@ -5458,7 +5458,7 @@ private fun MessageBubble(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         GlassCard(
             modifier = Modifier.fillMaxWidth(if (message.fromUser) .82f else .92f),
-            halo = if (message.fromUser) Glass.BlueHalo else Glass.Halo(g1 = Color(0x297C6CFF.toInt()), g2 = Color(0x1A54CCFF.toInt())),
+            halo = if (message.fromUser) Glass.BlueHalo else Glass.Halo(g1 = Color(0x2938BDF8.toInt()), g2 = Color(0x1A7DD3FC.toInt())),
             radius = 18.dp,
         ) {
             Column(Modifier.padding(top = 12.dp)) {

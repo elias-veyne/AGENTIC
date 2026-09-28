@@ -1,5 +1,6 @@
 package com.jarves.mh.ui.theme
 
+import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,6 +16,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -28,6 +30,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -49,8 +53,8 @@ object Glass {
     val Text = Color(0xFFBAE6FD)            // ice blue text (with white-glow feel)
     val TextMuted = Color(0xFF7DD3FC)       // muted light blue
     val TextBody = Color(0xFF7DD3FC)        // body-size light blue
-    val Ok = Color(0xFF38BDF8)
-    val Warn = Color(0xFF7DD3FC)
+    val Ok = Color(0xFF69D69E)              // green — keep distinct from Primary
+    val Warn = Color(0xFFFAB387)            // peach — keep distinct from Primary
 
     val Radius = 20.dp
     val RadiusCard = 16.dp
@@ -64,7 +68,14 @@ object Glass {
 
     val BlueHalo = Halo()
     val VioletHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x38BAE6FD.toInt()))
-    val TealHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x3880B4FF.toInt()))
+    val TealHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x3869D69E.toInt()))
+
+    // Icon-tile gradient pairs in the approved AMOLED blue ramp. These keep the
+    // per-card accent variation readable while staying on-palette: deep blue at
+    // the top of the ramp, ice blue, and green for the "healthy/ok" card.
+    val TileBlue = 0x3D38BDF8 to 0x1A38BDF8
+    val TileIce = 0x3DBAE6FD to 0x1A7DD3FC
+    val TileOk = 0x3D69D69E to 0x1A38BDF8
 }
 
 /**
@@ -213,5 +224,62 @@ fun GlassIconTile(
         contentAlignment = Alignment.Center,
     ) {
         content()
+    }
+}
+
+/**
+ * The "blue text + white glow" half of the approved AMOLED spec.
+ *
+ * The reference template draws each blue label with layered white
+ * `text-shadow`s (3px/7px/14px at .45/.25/.12 alpha) so the blue reads as
+ * luminous against pure black. Compose has no text-shadow, so this re-creates
+ * it by drawing blurred white copies of the text behind a crisp blue pass.
+ *
+ * Use only for short labels (headings, chips, names). It is a multi-pass
+ * overdraw and is wasted on long body text, where [Glass.TextBody] alone is
+ * legible. The glow passes are skipped below API 31, where `Modifier.blur`
+ * is unavailable; the crisp blue text remains.
+ */
+@Composable
+fun GlowText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Glass.Text,
+    glow: Color = Color.White,
+    style: TextStyle = TextStyle.Default,
+    textAlign: TextAlign? = null,
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Layered white glow: wide+faint, then medium, then tight.
+            Text(
+                text = text,
+                color = glow.copy(alpha = 0.12f),
+                style = style,
+                textAlign = textAlign,
+                modifier = Modifier.blur(7.dp),
+            )
+            Text(
+                text = text,
+                color = glow.copy(alpha = 0.22f),
+                style = style,
+                textAlign = textAlign,
+                modifier = Modifier.blur(3.5.dp),
+            )
+            Text(
+                text = text,
+                color = glow.copy(alpha = 0.40f),
+                style = style,
+                textAlign = textAlign,
+                modifier = Modifier.blur(1.5.dp),
+            )
+        }
+        // Crisp blue core on top.
+        Text(
+            text = text,
+            color = color,
+            style = style,
+            textAlign = textAlign,
+        )
     }
 }
