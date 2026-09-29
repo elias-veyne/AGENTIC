@@ -11,66 +11,86 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// Agentic glassmorphism palette (matches approved HTML demo)
-val AgenticBlue = Color(0xFF38BDF8)
-val AgenticViolet = Color(0xFFBAE6FD)
-val AgenticBg = Color(0xFF000000)
-val AgenticSurface = Color(0xFF0A0F18)
-val AgenticSurfaceVariant = Color(0xFF111A2B)
-val AgenticOutline = Color(0xFF2A3B55)
-val AgenticText = Color(0xFFBAE6FD)
-val AgenticTextDim = Color(0xFF7DD3FC)
+// Devil's Portfolio AMOLED Glass Theme Palette
+// Pure black background with glassmorphism effects
+val DevilBg = Color(0xFF000000)           // Pure AMOLED black
+val DevilSurface = Color(0xFF0A0F14)      // Very dark surface
+val DevilSurfaceVariant = Color(0xFF121820) // Surface variant
+val DevilSurfaceBright = Color(0xFF1A2230) // Brighter surface
 
-val PocketOrange = AgenticBlue
-val PocketBlue = AgenticViolet
-val PocketGreen = Color(0xFF69D69E)
-val PocketBackground = AgenticBg
-val PocketSurface = AgenticSurface
-val PocketSurfaceVariant = AgenticSurfaceVariant
-val PocketOutline = AgenticOutline
+// Accent colors
+val DevilPrimary = Color(0xFF38BDF8)      // Bright blue
+val DevilSecondary = Color(0xFFBAE6FD)    // Ice blue
+val DevilTertiary = Color(0xFF69D69E)     // Green accent
+val DevilAccent = Color(0xFF6366F1)       // Purple accent
 
-private val DarkColors = darkColorScheme(
-    primary = AgenticBlue,
+// Text colors
+val DevilText = Color(0xFFBAE6FD)         // Ice blue text
+val DevilTextMuted = Color(0xFF7DD3FC)    // Muted text
+val DevilTextDim = Color(0xFF4B5563)      // Dim text
+
+// Border/outline
+val DevilOutline = Color(0xFF2A3B55)
+val DevilOutlineVariant = Color(0xFF1E2E45)
+
+// Glass surface colors
+val GlassSurface = Color(0x1CFFFFFF)      // 11% white
+val GlassSurfaceStrong = Color(0x24FFFFFF)  // 14% white
+val GlassBorder = Color(0x38FFFFFF)       // 22% white
+val GlassHalo = Color(0x4D38BDF8)         // Blue halo
+
+// Color scheme
+private val DevilDarkColors = darkColorScheme(
+    primary = DevilPrimary,
     onPrimary = Color(0xFF001A2E),
     primaryContainer = Color(0xFF0E2B45),
     onPrimaryContainer = Color(0xFFCFEFFF),
-    secondary = AgenticViolet,
+    secondary = DevilSecondary,
     onSecondary = Color(0xFF0A2033),
-    tertiary = PocketGreen,
+    secondaryContainer = Color(0xFF1E3A5F),
+    onSecondaryContainer = Color(0xFFE0F2FE),
+    tertiary = DevilTertiary,
     onTertiary = Color(0xFF00391E),
-    background = AgenticBg,
-    onBackground = AgenticText,
-    surface = AgenticSurface,
-    onSurface = AgenticText,
-    surfaceVariant = AgenticSurfaceVariant,
-    onSurfaceVariant = AgenticTextDim,
-    outline = AgenticOutline,
-    outlineVariant = Color(0xFF1E2E45),
+    tertiaryContainer = Color(0xFF115B3E),
+    onTertiaryContainer = Color(0xFFA7F3D0),
+    background = DevilBg,
+    onBackground = DevilText,
+    surface = DevilSurface,
+    onSurface = DevilText,
+    surfaceVariant = DevilSurfaceVariant,
+    onSurfaceVariant = DevilTextMuted,
+    surfaceTint = DevilPrimary,
+    outline = DevilOutline,
+    outlineVariant = DevilOutlineVariant,
 )
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF0B6E9E),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD6F0FF),
-    onPrimaryContainer = Color(0xFF062E44),
-    secondary = Color(0xFF5A48C9),
-    onSecondary = Color(0xFFFFFFFF),
-    tertiary = Color(0xFF1B8A5A),
-    onTertiary = Color(0xFFFFFFFF),
-    background = Color(0xFFF4F8FC),
-    onBackground = Color(0xFF0C1119),
+private val DevilLightColors = lightColorScheme(
+    primary = DevilPrimary,
+    onPrimary = Color(0xFF001A2E),
+    primaryContainer = Color(0xFFE0F2FE),
+    onPrimaryContainer = Color(0xFF0C3A59),
+    secondary = DevilSecondary,
+    onSecondary = Color(0xFF0A2033),
+    secondaryContainer = Color(0xFFE0F2FE),
+    onSecondaryContainer = Color(0xFF0C3A59),
+    tertiary = DevilTertiary,
+    onTertiary = Color(0xFF00391E),
+    tertiaryContainer = Color(0xFFD1F4E0),
+    onTertiaryContainer = Color(0xFF0C3A2B),
+    background = Color(0xFFF8FAFC),
+    onBackground = Color(0xFF0F172A),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF0C1119),
-    surfaceVariant = Color(0xFFE7EEF6),
-    onSurfaceVariant = Color(0xFF4C5A6B),
-    outline = Color(0xFFC3D0DC),
-    outlineVariant = Color(0xFFDCE5EE),
+    onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFE2E8F0),
+    onSurfaceVariant = Color(0xFF475569),
+    outline = DevilOutline,
+    outlineVariant = Color(0xFFCBD5E1),
 )
 
 enum class AppThemeMode { SYSTEM, DARK, LIGHT }
 
 @Composable
-fun PocketTheme(themeMode: AppThemeMode = AppThemeMode.SYSTEM, content: @Composable () -> Unit) {
+fun DevilTheme(themeMode: AppThemeMode = AppThemeMode.DARK, content: @Composable () -> Unit) {
     val isDark = when (themeMode) {
         AppThemeMode.DARK -> true
         AppThemeMode.LIGHT -> false
@@ -90,7 +110,7 @@ fun PocketTheme(themeMode: AppThemeMode = AppThemeMode.SYSTEM, content: @Composa
     }
 
     MaterialTheme(
-        colorScheme = if (isDark) DarkColors else LightColors,
+        colorScheme = if (isDark) DevilDarkColors else DevilLightColors,
         content = content,
     )
 }
