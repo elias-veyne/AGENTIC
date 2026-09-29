@@ -170,6 +170,8 @@ data class AppUiState(
     val gitCloneMessage: String? = null,
     val githubAuthStatus: GitHubAuthStatus = GitHubAuthStatus.DISCONNECTED,
     val githubLogin: String? = null,
+    /** Personal access token the agent can use for private repos / push. */
+    val githubPat: String? = null,
     val githubUserCode: String? = null,
     val githubVerificationUri: String? = null,
     val githubMessage: String? = null,
@@ -271,6 +273,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
+
+    init {
+        // Push any saved PAT into the runtime so agent sessions can use it.
+        dshRuntime.updateGithubToken(preferences.githubPat)
+    }
     private val installer = RuntimeInstaller(application)
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
@@ -324,6 +331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             projects = preferences.loadProjects(),
             githubAuthStatus = GitHubAuthStatus.DISCONNECTED,
             githubLogin = preferences.githubLogin.takeIf(String::isNotBlank),
+            githubPat = preferences.githubPat.takeIf(String::isNotBlank),
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
             }.toSet() + DevStack.WEB,
@@ -2465,8 +2473,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun refreshGitHubConnection() = withContext(Dispatchers.IO) {
-        if (!installer.isGitHubCliInstalled()) return@withContext
+    /** Saves a personal access token the agent uses for private repos and push. */
+    fun saveGithubPat(token: String) {
+        val clean = token.trim()
+        preferences.githubPat = clean
+        dshRuntime.updateGithubToken(clean)
+        _state.update { it.copy(githubPat = clean.takeIf(String::isNotBlank)) }
+    }
+
+    fun clearGithubPat() {
+        preferences.githubPat = ""
+        dshRuntime.updateGithubToken(null)
+        _state.update { it.copy(githubPat = null) }
+    }
+
+    private suspend fun refreshGitHubConnection() = withContext(Dispatchers.IO) {        if (!installer.isGitHubCliInstalled()) return@withContext
         val login = runCatching { githubAccountLogin() }.getOrNull()
         if (login.isNullOrBlank()) {
             preferences.githubLogin = ""

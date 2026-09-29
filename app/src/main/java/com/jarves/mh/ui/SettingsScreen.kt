@@ -107,12 +107,11 @@ import androidx.compose.material.icons.filled.Link
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LegacySettingsScreen(
+ private fun LegacySettingsScreen(
     state: AppUiState,
     onSaveProvider: (ProviderProfile, String) -> Unit,
     onDiscoverModels: suspend (ProviderProfile, String) -> ModelDiscoveryResult,
     onValidateProvider: suspend (ProviderProfile, String, List<DiscoveredModel>) -> ConnectionValidation,
-    onSetThemeMode: (AppThemeMode) -> Unit,
     onPing: () -> Unit,
     onClearTerminal: () -> Unit,
     getSavedApiKey: (ProviderKind) -> String,
@@ -122,6 +121,8 @@ private fun LegacySettingsScreen(
     onSetNotifTaskAlerts: (Boolean) -> Unit = {},
     onSetNotifApprovalRequests: (Boolean) -> Unit = {},
     onSetNotifHeartbeatWarnings: (Boolean) -> Unit = {},
+    onSaveGithubPat: (String) -> Unit = {},
+    onClearGithubPat: () -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -143,6 +144,8 @@ private fun LegacySettingsScreen(
     var discoveredModels by remember(baseUrl) { mutableStateOf(emptyList<DiscoveredModel>()) }
     var terminalClearedMessage by remember { mutableStateOf(false) }
     var showChildProcessHelp by rememberSaveable { mutableStateOf(false) }
+    var patInput by rememberSaveable { mutableStateOf("") }
+    var patVisible by rememberSaveable { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         GlassBackground()
@@ -172,56 +175,17 @@ private fun LegacySettingsScreen(
                 .imePadding(),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            // -------------------------------------------------------------
-            // 1. APPEARANCE / THEME
-            // -------------------------------------------------------------
-            item {
-                SectionHeader(
-                    title = "Appearance",
-                    subtitle = "Customize app theme and styling",
-                    icon = Icons.Default.Tune,
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    ThemeOptionCard(
-                        title = "Dark",
-                        icon = Icons.Default.DarkMode,
-                        selected = state.themeMode == AppThemeMode.DARK,
-                        onClick = { onSetThemeMode(AppThemeMode.DARK) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    ThemeOptionCard(
-                        title = "Light",
-                        icon = Icons.Default.LightMode,
-                        selected = state.themeMode == AppThemeMode.LIGHT,
-                        onClick = { onSetThemeMode(AppThemeMode.LIGHT) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    ThemeOptionCard(
-                        title = "System",
-                        icon = Icons.Default.PhoneAndroid,
-                        selected = state.themeMode == AppThemeMode.SYSTEM,
-                        onClick = { onSetThemeMode(AppThemeMode.SYSTEM) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-            }
-
-            // -------------------------------------------------------------
-            // 2. NOTIFICATIONS
-            // -------------------------------------------------------------
-            item {
-                SectionHeader(
-                    title = "Notifications",
-                    subtitle = "Alerts for agent activity and edge cases",
-                    icon = Icons.Default.Visibility,
-                )
-                Spacer(Modifier.height(10.dp))
+         ) {
+             // -------------------------------------------------------------
+             // 1. NOTIFICATIONS
+             // -------------------------------------------------------------
+             item {
+                 SectionHeader(
+                     title = "Notifications",
+                     subtitle = "Alerts for agent activity and edge cases",
+                     icon = Icons.Default.Visibility,
+                 )
+                 Spacer(Modifier.height(10.dp))
                 NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     radius = 16.dp,
@@ -378,40 +342,90 @@ private fun LegacySettingsScreen(
             // -------------------------------------------------------------
             // 2.5 INTEGRATIONS
             // -------------------------------------------------------------
-            item {
-                SectionHeader(
-                    title = "Integrations",
-                    subtitle = "Connect external services",
-                    icon = Icons.Default.Link,
-                )
-                Spacer(Modifier.height(10.dp))
-                NeonGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    radius = 16.dp,
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                        Text(
-                            "Connect your external services to enable project management and code access.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column {
-                                Text("GitHub", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Connect your GitHub account", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = { onNavigateToGitHub() }) {
-                                Text("Manage")
-                            }
-                        }
-                    }
-                }
-            }
+             item {
+                 SectionHeader(
+                     title = "Integrations",
+                     subtitle = "Connect external services",
+                     icon = Icons.Default.Link,
+                 )
+                 Spacer(Modifier.height(10.dp))
+                 NeonGlassCard(
+                     modifier = Modifier.fillMaxWidth(),
+                     radius = 16.dp,
+                 ) {
+                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                         Text(
+                             "Connect your external services to enable project management and code access.",
+                             fontSize = 12.sp,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                         )
+                         Spacer(Modifier.height(12.dp))
+                         Row(
+                             modifier = Modifier.fillMaxWidth(),
+                             horizontalArrangement = Arrangement.SpaceBetween,
+                             verticalAlignment = Alignment.CenterVertically,
+                         ) {
+                             Column {
+                                 Text("GitHub", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                 Text("Connect your GitHub account", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                             }
+                             TextButton(onClick = { onNavigateToGitHub() }) {
+                                 Text("Manage")
+                             }
+                         }
+                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                         Spacer(Modifier.height(12.dp))
+                         // Personal access token: lets the agent clone/push private
+                         // repos and create repositories.
+                         Text("Personal access token", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                         Text(
+                             "Give the agent access to your private repositories so it can clone, push, and create repos for you.",
+                             fontSize = 11.sp,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                         )
+                         Spacer(Modifier.height(8.dp))
+                         Row(verticalAlignment = Alignment.CenterVertically) {
+                             OutlinedTextField(
+                                 value = patInput,
+                                 onValueChange = { patInput = it },
+                                 label = { Text("ghp_…") },
+                                 singleLine = true,
+                                 visualTransformation = if (patVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                 trailingIcon = {
+                                     IconButton(onClick = { patVisible = !patVisible }) {
+                                         Icon(if (patVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Toggle visibility")
+                                     }
+                                 },
+                                 modifier = Modifier.weight(1f),
+                                 shape = RoundedCornerShape(12.dp),
+                             )
+                             Spacer(Modifier.width(8.dp))
+                             Button(
+                                 onClick = {
+                                     if (patInput.isNotBlank()) {
+                                         onSaveGithubPat(patInput.trim())
+                                         patInput = ""
+                                     }
+                                 },
+                                 enabled = patInput.isNotBlank(),
+                                 shape = RoundedCornerShape(12.dp),
+                             ) { Text("Save") }
+                         }
+                         if (state.githubPat != null) {
+                             Spacer(Modifier.height(8.dp))
+                             Text(
+                                 "Token saved — the agent can reach private repos and push.",
+                                 fontSize = 11.sp,
+                                 color = PocketGreen,
+                             )
+                             TextButton(onClick = { patInput = ""; onClearGithubPat() }) {
+                                 Text("Remove token", color = MaterialTheme.colorScheme.error)
+                             }
+                         }
+                     }
+                 }
+             }
 
             // -------------------------------------------------------------
             // 3. AI PROVIDER & CONNECTION
@@ -983,12 +997,11 @@ private fun NotificationToggleRow(
 // Public SettingsScreen wrapper - delegates to LegacySettingsScreen
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
+ fun SettingsScreen(
     state: AppUiState,
     onSaveProvider: (ProviderProfile, String) -> Unit,
     onDiscoverModels: suspend (ProviderProfile, String) -> ModelDiscoveryResult,
     onValidateProvider: suspend (ProviderProfile, String, List<DiscoveredModel>) -> ConnectionValidation,
-    onSetThemeMode: (AppThemeMode) -> Unit,
     onPing: () -> Unit,
     onClearTerminal: () -> Unit,
     getSavedApiKey: (ProviderKind) -> String,
@@ -1009,6 +1022,8 @@ fun SettingsScreen(
     onSetNotifTaskAlerts: (Boolean) -> Unit = {},
     onSetNotifApprovalRequests: (Boolean) -> Unit = {},
     onSetNotifHeartbeatWarnings: (Boolean) -> Unit = {},
+    onSaveGithubPat: (String) -> Unit = {},
+    onClearGithubPat: () -> Unit = {},
     onNavigateToGitHub: () -> Unit = {},
 ) {
     LegacySettingsScreen(
@@ -1016,7 +1031,6 @@ fun SettingsScreen(
         onSaveProvider = onSaveProvider,
         onDiscoverModels = onDiscoverModels,
         onValidateProvider = onValidateProvider,
-        onSetThemeMode = onSetThemeMode,
         onPing = onPing,
         onClearTerminal = onClearTerminal,
         getSavedApiKey = getSavedApiKey,
@@ -1026,6 +1040,8 @@ fun SettingsScreen(
         onSetNotifTaskAlerts = onSetNotifTaskAlerts,
         onSetNotifApprovalRequests = onSetNotifApprovalRequests,
         onSetNotifHeartbeatWarnings = onSetNotifHeartbeatWarnings,
+        onSaveGithubPat = onSaveGithubPat,
+        onClearGithubPat = onClearGithubPat,
         onNavigateToGitHub = onNavigateToGitHub,
     )
 }

@@ -2124,11 +2124,12 @@ private fun RootScreenHost(
                     },
                     onDiscoverModels = viewModel::discoverModels,
                     onValidateProvider = viewModel::validateProvider,
-                    onSetThemeMode = viewModel::setThemeMode,
                     onSetAccentColor = viewModel::setAccentColor,
                     onSetNotifTaskAlerts = viewModel::setNotifTaskAlerts,
                     onSetNotifApprovalRequests = viewModel::setNotifApprovalRequests,
                     onSetNotifHeartbeatWarnings = viewModel::setNotifHeartbeatWarnings,
+                    onSaveGithubPat = viewModel::saveGithubPat,
+                    onClearGithubPat = viewModel::clearGithubPat,
                     onPing = viewModel::pingApi,
                     onClearTerminal = viewModel::clearTerminal,
                     getSavedApiKey = viewModel::getSavedApiKey,
@@ -3253,11 +3254,9 @@ private fun ProjectsScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 val isImportExpanded = importExpanded || state.projectImporting || state.gitCloneRunning
-                Surface(
+                NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                    accent = Color(0xFF38BDF8),
                 ) {
                     Column {
                         Row(
@@ -3268,11 +3267,11 @@ private fun ProjectsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("Bring an existing project", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                Text("Bring an existing project", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = Glass.Text)
                                 Text(
                                     if (isImportExpanded) "Import files or clone complete Git history" else "ZIP file, Git repository, or GitHub",
                                     fontSize = 10.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = Glass.TextMuted,
                                 )
                             }
                             Icon(
@@ -3367,16 +3366,22 @@ private fun ProjectsScreen(
             if (state.recentChats.isNotEmpty()) {
                 item { Text("Recent chats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
                 items(state.recentChats, key = { it.chatId }) { chat: RecentChat ->
-                    GlassCard(
+                    NeonGlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        halo = Glass.BlueHalo,
+                        accent = Color(0xFF38BDF8),
                         onClick = { onOpen(state.projects.first { it.id == chat.projectId }) },
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            GlassIconTile(tint1 = Color(Glass.TileBlue.first), tint2 = Color(Glass.TileBlue.second)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(11.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 Icon(Icons.Default.Chat, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(17.dp))
                             }
                             Spacer(Modifier.width(12.dp))
@@ -3396,55 +3401,55 @@ private fun ProjectsScreen(
                 }
                 item { Spacer(Modifier.height(4.dp)) }
             }
-            item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-            if (projects.isEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 10.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = PocketOrange.copy(alpha = 0.15f),
-                                modifier = Modifier.size(56.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.Folder,
-                                        contentDescription = null,
-                                        tint = PocketOrange,
-                                        modifier = Modifier.size(28.dp),
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "No projects yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                            )
-                            Text(
-                                "Create a named project or start instantly with a Quick Project.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 20.sp,
-                            )
-                        }
-                    }
-                }
-            } else {
+             item { Text("Your projects", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Glass.Text) }
+             if (projects.isEmpty()) {
+                 item {
+                     NeonGlassCard(
+                         modifier = Modifier
+                             .fillMaxWidth()
+                             .padding(vertical = 10.dp),
+                         accent = Color(0xFF38BDF8),
+                     ) {
+                         Column(
+                             modifier = Modifier
+                                 .fillMaxWidth()
+                                 .padding(28.dp),
+                             horizontalAlignment = Alignment.CenterHorizontally,
+                             verticalArrangement = Arrangement.spacedBy(8.dp),
+                         ) {
+                             Box(
+                                 modifier = Modifier
+                                     .size(56.dp)
+                                     .clip(CircleShape)
+                                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                                 contentAlignment = Alignment.Center,
+                             ) {
+                                 Icon(
+                                     Icons.Default.Folder,
+                                     contentDescription = null,
+                                     tint = Glass.Primary,
+                                     modifier = Modifier.size(28.dp),
+                                 )
+                             }
+                             Spacer(Modifier.height(4.dp))
+                             Text(
+                                 "No projects yet",
+                                 style = MaterialTheme.typography.titleMedium,
+                                 fontWeight = FontWeight.Bold,
+                                 color = Glass.Text,
+                                 textAlign = TextAlign.Center,
+                             )
+                             Text(
+                                 "Create a named project or start instantly with a Quick Project.",
+                                 style = MaterialTheme.typography.bodyMedium,
+                                 color = Glass.TextMuted,
+                                 textAlign = TextAlign.Center,
+                                 lineHeight = 20.sp,
+                             )
+                         }
+                     }
+                 }
+             } else {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
@@ -3766,10 +3771,20 @@ private fun ProjectCard(
     var showRename by rememberSaveable(project.id) { mutableStateOf(false) }
     var showDelete by rememberSaveable(project.id) { mutableStateOf(false) }
     var renameText by rememberSaveable(project.id) { mutableStateOf(project.name) }
-    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+    NeonGlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        accent = Color(0xFF38BDF8),
+        onClick = onOpen,
+    ) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Icon(Icons.Default.Folder, null, Modifier.padding(13.dp), tint = PocketOrange)
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Default.Folder, null, tint = Glass.Primary, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
@@ -3778,6 +3793,7 @@ private fun ProjectCard(
                         project.name,
                         modifier = Modifier.weight(1f, fill = false),
                         fontWeight = FontWeight.SemiBold,
+                        color = Glass.Text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -3795,12 +3811,12 @@ private fun ProjectCard(
                 }
                 Text(
                     if (project.kind == ProjectKind.QUICK_PROJECT) "Quick project" else project.description,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Glass.TextMuted,
                     fontSize = 12.sp,
                     maxLines = 1,
                 )
-                Text("/workspace/${project.slug}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                Text("${project.language} · ${project.formattedUpdatedAt}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("/workspace/${project.slug}", color = Glass.TextMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text("${project.language} · ${project.formattedUpdatedAt}", color = Glass.TextMuted, fontSize = 11.sp)
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "Project options") }

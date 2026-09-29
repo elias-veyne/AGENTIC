@@ -43,6 +43,13 @@ class DshRuntimeBridge(
     private val context: Context,
     private val secretFor: (ProviderProfile) -> String?,
 ) : RuntimeBridge {
+    /** Current GitHub PAT, pushed from the view model so the agent can reach
+     *  private repos and push. Updated via [updateGithubToken]. */
+    @Volatile private var githubToken: String? = null
+
+    fun updateGithubToken(token: String?) {
+        githubToken = token?.takeIf { it.isNotBlank() }
+    }
     private val installer = RuntimeInstaller(context)
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
@@ -106,6 +113,13 @@ class DshRuntimeBridge(
                 route.keyEnv to secret,
             )
             if (route.keyEnv != FALLBACK_KEY_ENV) environment.remove(FALLBACK_KEY_ENV)
+            // Give the agent the GitHub PAT so it can clone private repos and
+            // push. `gh` and `git` both read GITHUB_TOKEN; git also accepts it
+            // as an https credential via the credential helper below.
+            githubToken?.takeIf { it.isNotBlank() }?.let { token ->
+                environment["GITHUB_TOKEN"] = token
+                environment["GH_TOKEN"] = token
+            }
 
             val guestWorkspacePath = "/workspace/$projectSlug"
             val contextPrompt = buildContextPrompt(prompt, conversationHistory, guestWorkspacePath, projectKind)
@@ -544,6 +558,9 @@ class DshRuntimeBridge(
         // from the training cutoff.
         sb.appendLine("Today is ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.US).format(java.util.Date())}. Your knowledge has a cutoff, so for anything current (news, releases, prices, status) do not rely on memory — fetch it.")
         sb.appendLine("You have `curl` and `wget` in the terminal with network access. For current information, fetch a real source (e.g. `curl -sL https://en.wikipedia.org/wiki/Special:Random` is not a search; prefer the source's own page or a plain-text news endpoint) and cite what you read. If a fetch fails or you cannot verify, say so instead of guessing from memory.")
+        githubToken?.takeIf { it.isNotBlank() }?.let {
+            sb.appendLine("A GitHub personal access token is available in the environment as \$GITHUB_TOKEN (also \$GH_TOKEN). Use it to clone and push private repositories, create repos, and open pull requests — the user has authorized it. `git clone https://github.com/owner/repo` works for private repos with the credential helper already configured; prefer the `gh` CLI for repo creation and PRs.")
+        }
         sb.appendLine("</project_workspace>")
         sb.appendLine()
         if (priorMessages.isEmpty()) {
