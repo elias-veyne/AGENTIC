@@ -4128,7 +4128,7 @@ private fun WorkspaceScreen(
                         onTerminalPrepare(command)
                     },
                     chatModel = state.activeChatModel,
-                    providerModel = state.provider.model,
+                    providerModel = state.provider.model.ifBlank { state.provider.kind.defaultModel },
                     availableModels = state.chatModels,
                     discoveringModels = state.chatModelsLoading,
                     onRefreshModels = onRefreshChatModels,
@@ -4389,7 +4389,7 @@ private fun ChatModelChip(
             )
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 12.dp, vertical = 7.dp)
-            .alpha(if (enabled) 1f else 0.55f),
+            .then(if (enabled) Modifier else Modifier.alpha(0.55f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -4900,7 +4900,7 @@ private fun ChatTab(
     if (showModelPicker) {
         ChatModelPickerSheet(
             currentModel = chatModel,
-            defaultModel = providerModel.ifBlank { agentKind.defaultModel },
+            defaultModel = providerModel,
             models = availableModels,
             discovering = discoveringModels,
             onRefresh = onRefreshModels,
@@ -5039,7 +5039,7 @@ private fun ChatTab(
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 ChatModelChip(
-                    model = chatModel ?: providerModel.ifBlank { agentKind.defaultModel },
+                    model = chatModel ?: providerModel,
                     usingDefault = chatModel.isNullOrBlank(),
                     enabled = !isRunning,
                     onClick = { showModelPicker = true },
