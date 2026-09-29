@@ -152,6 +152,12 @@ data class AppUiState(
     val backgroundSetupComplete: Boolean = false,
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
+    /** Model ids discovered for the active provider, cached so the per-chat
+     *  model picker can list them without re-hitting the provider each time. */
+    val chatModels: List<com.jarves.mh.network.DiscoveredModel> = emptyList(),
+    val chatModelsLoading: Boolean = false,
+    /** Model pinned to the active chat (per-chat model, OpenCode-style). */
+    val activeChatModel: String? = null,
     /** Saved-key name pinned to the active chat (per-chat API key). */
     val activeChatKeyName: String? = null,
     /** Independent second agent (Agent 2) used by Agentic mode / cooperative peers. */
@@ -937,15 +943,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun requiresAndroidToolchain(command: String): Boolean =
         Regex("(?m)(^|[;&|]\\s*)(?:\\./)?gradle(?:w)?(?:\\s|$)", RegexOption.IGNORE_CASE).containsMatchIn(command)
 
-
-    fun toggleTheme() {
-        val next = if (_state.value.themeMode == com.jarves.mh.ui.theme.AppThemeMode.DARK) {
-            com.jarves.mh.ui.theme.AppThemeMode.LIGHT
-        } else {
-            com.jarves.mh.ui.theme.AppThemeMode.DARK
-        }
-        setThemeMode(next)
-    }
 
     fun setThemeMode(mode: com.jarves.mh.ui.theme.AppThemeMode) {
         preferences.themeMode = mode.name.lowercase()
@@ -2732,6 +2729,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeChatId = chat.id,
                 activeChatMode = chat.mode,
                 activeChatKeyName = chat.keyName,
+                activeChatModel = chat.model,
                 chatModeLocked = false,
                 totalChats = it.totalChats + 1,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
@@ -2783,6 +2781,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeChatId = chat.id,
                 activeChatMode = chat.mode,
                 activeChatKeyName = chat.keyName,
+                activeChatModel = chat.model,
                 chatModeLocked = saved.any { it.fromUser } || saved.any { !it.fromUser },
                 messages = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) },
                 liveProcess = emptyList(),
@@ -2808,7 +2807,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(projectChats = updatedChats, activeChatKeyName = keyName) }
     }
 
-    fun refreshProjectFiles() {        val project = _state.value.activeProject ?: return
+    /** Pins the active chat to a specific model id (OpenCode-style per-chat model).
+     *  Pass null to fall back to the provider's configured model. */
+    fun selectChatModel(model: String?) {
+        val current = _state.value
+        val project = current.activeProject ?: return
+        val chatId = current.activeChatId ?: return
+        val clean = model?.trim()?.takeIf { it.isNotBlank() }
+        val updatedChats = current.projectChats.map {
+            if (it.id == chatId) it.copy(model = clean) else it
+        }
+        preferences.saveProjectChats(project.id, updatedChats)
+        _state.update { it.copy(projectChats = updatedChats, activeChatModel = clean) }
+    }
+
+    /** Fetches the provider's model list once so the per-chat picker can show it. */
+    fun refreshChatModels() {
+        val profile = _state.value.provider
+        if (_state.value.chatModelsLoading) return
+        if (profile.baseUrl.isBlank()) return
+        viewModelScope.launch {
+            _state.update { it.copy(chatModelsLoading = true) }
+            val key = vault.get(profile.kind.name).orEmpty()
+            val result = providerApi.discoverModels(profile.resolvedBaseUrl, key, providerProtocolForAgent(profile, _state.value.agentKind))
+            when (result) {
+                is ModelDiscoveryResult.Success -> _state.update { it.copy(chatModels = result.models, chatModelsLoading = false) }
+                is ModelDiscoveryResult.Failure -> _state.update { it.copy(chatModelsLoading = false) }
+            }
+        }
+    }
+
+    fun refreshProjectFiles() {
+        val project = _state.value.activeProject ?: return
         _state.update { it.copy(filesLoading = true) }
         viewModelScope.launch {
             val (entries, suggestedRoot, androidProjectDetected) = withContext(Dispatchers.IO) {
@@ -3047,6 +3077,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             vault.credentials(state.value.provider.kind.name)
                 .firstOrNull { it.name == name }?.secret
         }
+        // Per-chat model (OpenCode-style): a chat may pin a model id that
+        // overrides the provider's configured default for this conversation only.
+        val chatModel = state.value.activeChatModel?.takeIf { it.isNotBlank() }
+        val runProvider = if (chatModel != null && chatModel != state.value.provider.model) {
+            state.value.provider.copy(model = chatModel)
+        } else {
+            state.value.provider
+        }
         _state.update {
             val startedAt = System.currentTimeMillis()
             val promptTokens = estimateTokens(prompt.trim())
@@ -3096,7 +3134,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             project.kind,
                             instruction,
                             history,
-                            state.value.provider,
+                            runProvider,
                         )
                         parseLLMDecompose(raw)
                     }
@@ -3115,7 +3153,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             project.kind,
                             instruction,
                             history,
-                            state.value.provider,
+                            runProvider,
                             state.value.agent2Provider,
                             state.value.agent3Provider,
                             idx,
@@ -3146,7 +3184,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         project = project,
                         prompt = runtimePrompt,
                         history = history,
-                        provider = state.value.provider,
+                        provider = runProvider,
                         resolvedSecret = pinnedSecret,
                     )
                     activeRuntimeRequest?.let { request ->
@@ -3179,7 +3217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     project = project,
                     prompt = runtimePrompt,
                     history = history,
-                    provider = state.value.provider,
+                    provider = runProvider,
                     resolvedSecret = pinnedSecret,
                 )
                 viewModelScope.launch {

@@ -3,7 +3,6 @@ package com.jarves.mh.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -31,13 +30,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -84,7 +81,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.theme.PocketGreen
 import com.jarves.mh.ui.theme.PocketOrange
 
@@ -97,8 +93,6 @@ fun TerminalScreen(
     onInput: (String) -> Unit = {},
     onInterrupt: (() -> Unit)? = null,
     onClear: () -> Unit,
-    onToggleTheme: () -> Unit,
-    themeMode: AppThemeMode,
     title: String = "Linux Terminal",
     subtitle: String = "Ubuntu 24.04 · PRoot Sandbox",
     liveOutput: String = "",
@@ -107,7 +101,6 @@ fun TerminalScreen(
     onCommandDraftConsumed: () -> Unit = {},
     promptPath: String = "/workspace",
     onStop: (() -> Unit)? = null,
-    showThemeAction: Boolean = false,
     showQuickCommands: Boolean = true,
     compactHeader: Boolean = false,
 ) {
@@ -200,14 +193,6 @@ fun TerminalScreen(
                         IconButton(onClick = onClear, modifier = Modifier.size(38.dp)) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "Clear output", modifier = Modifier.size(20.dp))
                         }
-                        if (showThemeAction) {
-                            IconButton(onClick = onToggleTheme) {
-                                Icon(
-                                    if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = "Toggle theme",
-                                )
-                            }
-                        }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f))
                 }
@@ -248,14 +233,6 @@ fun TerminalScreen(
                         IconButton(onClick = onClear) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "Clear output")
                         }
-                        if (showThemeAction) {
-                            IconButton(onClick = onToggleTheme) {
-                                Icon(
-                                    if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = "Toggle theme",
-                                )
-                            }
-                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 )
@@ -294,11 +271,7 @@ fun TerminalScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             }
 
-            val isDark = when (themeMode) {
-                AppThemeMode.DARK -> true
-                AppThemeMode.LIGHT -> false
-                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
-            }
+            val isDark = true
             val terminalBg = if (isDark) Color(0xFF090D14) else MaterialTheme.colorScheme.surface
             val promptGreen = if (isDark) PocketGreen else Color(0xFF0D7A3E)
             val commandTextColor = if (isDark) Color(0xFFF0F6FC) else MaterialTheme.colorScheme.onSurface

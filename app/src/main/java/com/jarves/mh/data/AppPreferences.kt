@@ -412,6 +412,7 @@ class AppPreferences(private val context: Context) {
                 put("updatedAtMillis", chat.updatedAtMillis)
                 put("mode", chat.mode.name)
                 chat.keyName?.let { put("keyName", it) }
+                chat.model?.takeIf { it.isNotBlank() }?.let { put("model", it) }
             })
         }
         File(projectDir, "index.json").writeText(arr.toString())
@@ -433,6 +434,7 @@ class AppPreferences(private val context: Context) {
                         mode = runCatching { AgentMode.valueOf(obj.optString("mode", "SIMPLE")) }
                             .getOrDefault(AgentMode.SIMPLE),
                         keyName = obj.optString("keyName", null),
+                        model = obj.optString("model", null)?.takeIf { it.isNotBlank() },
                     )
                 }.sortedByDescending { it.updatedAtMillis }
             }.getOrDefault(emptyList())

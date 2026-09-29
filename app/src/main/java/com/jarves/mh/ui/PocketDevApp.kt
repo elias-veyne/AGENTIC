@@ -87,7 +87,7 @@ import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Bolt
@@ -108,7 +108,6 @@ import androidx.compose.material.icons.filled.North
 import androidx.compose.material.icons.filled.South
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
@@ -252,8 +251,6 @@ import java.io.ByteArrayInputStream
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-
-import com.jarves.mh.ui.theme.AppThemeMode
 import com.jarves.mh.ui.GitHubConnectionScreen
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
@@ -291,20 +288,14 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
     when {
         state.startupStage == StartupStage.CHECKING -> StartupLoadingScreen(
             state = state,
-            themeMode = state.themeMode,
-            onToggleTheme = viewModel::toggleTheme,
         )
         !state.backgroundSetupComplete && state.startupStage == StartupStage.SETUP_REQUIRED ->
             BackgroundTaskSetupScreen(
-                themeMode = state.themeMode,
-                onToggleTheme = viewModel::toggleTheme,
                 onContinue = viewModel::finishBackgroundSetup,
             )
         state.startupStage == StartupStage.SETUP_REQUIRED -> RuntimeSetupPromptScreen(
             selectedStacks = state.selectedDevStacks,
             selectedAgent = state.agentKind,
-            themeMode = state.themeMode,
-            onToggleTheme = viewModel::toggleTheme,
             onToggleStack = viewModel::toggleDevStack,
             onSelectAgent = viewModel::selectAgent,
             onDownload = viewModel::startRuntimeSetup,
@@ -312,21 +303,15 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
         state.startupStage == StartupStage.INSTALLING && state.showDetailedSetupProgress ->
             RuntimeInstallationScreen(
                 state = state,
-                themeMode = state.themeMode,
-                onToggleTheme = viewModel::toggleTheme,
             )
         state.startupStage == StartupStage.INSTALLING || state.startupStage == StartupStage.INITIALIZING ->
             StartupLoadingScreen(
                 state = state,
-                themeMode = state.themeMode,
-                onToggleTheme = viewModel::toggleTheme,
             )
         state.startupStage == StartupStage.ERROR -> StartupErrorScreen(
             message = state.startupError,
             isOffline = state.startupErrorIsOffline,
             logs = state.startupLogs,
-            themeMode = state.themeMode,
-            onToggleTheme = viewModel::toggleTheme,
             onRetry = viewModel::retryStartup,
         )
         state.startupStage == StartupStage.MODEL_SETUP -> ProviderSetupScreen(
@@ -338,13 +323,9 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onDiscover = viewModel::discoverModels,
             onValidate = viewModel::validateProvider,
             onSelectAgent = viewModel::chooseOnboardingAgent,
-            onToggleTheme = viewModel::toggleTheme,
-            themeMode = state.themeMode,
         )
         state.startupStage == StartupStage.READY && !state.backgroundSetupComplete ->
             BackgroundTaskSetupScreen(
-                themeMode = state.themeMode,
-                onToggleTheme = viewModel::toggleTheme,
                 onContinue = viewModel::finishBackgroundSetup,
             )
         state.readOnlyProject != null -> ReadOnlyProjectScreen(
@@ -385,6 +366,8 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onRemoveAttachment = viewModel::removePendingAttachment,
             onOpenAttachment = viewModel::openChatAttachment,
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
+            onRefreshChatModels = viewModel::refreshChatModels,
+            onSelectChatModel = viewModel::selectChatModel,
         )
         !state.onboardingComplete && state.startupStage == StartupStage.READY ->
             DemoOnboarding(
@@ -410,8 +393,6 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BackgroundTaskSetupScreen(
-    themeMode: AppThemeMode = AppThemeMode.DARK,
-    onToggleTheme: () -> Unit = {},
     onContinue: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -488,14 +469,6 @@ private fun BackgroundTaskSetupScreen(
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
                         Text("Agentic", fontWeight = FontWeight.Bold)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onToggleTheme) {
-                        Icon(
-                            if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = "Toggle theme",
-                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -726,8 +699,6 @@ private fun getDevStackVisuals(stack: DevStack): DevStackVisuals = when (stack) 
 private fun RuntimeSetupPromptScreen(
     selectedStacks: Set<DevStack>,
     selectedAgent: AgentKind = AgentKind.DEEPSEEK_HARNESS,
-    themeMode: AppThemeMode = AppThemeMode.DARK,
-    onToggleTheme: () -> Unit = {},
     onToggleStack: (DevStack) -> Unit,
     onSelectAgent: (AgentKind) -> Unit = {},
     onDownload: () -> Unit,
@@ -771,14 +742,6 @@ private fun RuntimeSetupPromptScreen(
                         IconButton(onClick = { currentStep = 0 }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onToggleTheme) {
-                        Icon(
-                            if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = "Toggle theme",
-                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -1384,8 +1347,6 @@ private fun SpecRow(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun RuntimeInstallationScreen(
     state: AppUiState,
-    themeMode: AppThemeMode = AppThemeMode.DARK,
-    onToggleTheme: () -> Unit = {},
 ) {
     val view = LocalView.current
     DisposableEffect(Unit) {
@@ -1406,14 +1367,6 @@ private fun RuntimeInstallationScreen(
                             Text("Set up Agentic", fontWeight = FontWeight.Bold)
                         }
                     },
-                actions = {
-                    IconButton(onClick = onToggleTheme) {
-                        Icon(
-                            if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = "Toggle theme",
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -1524,8 +1477,6 @@ private fun RuntimeInstallationScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun StartupLoadingScreen(
     state: AppUiState,
-    themeMode: AppThemeMode = AppThemeMode.DARK,
-    onToggleTheme: () -> Unit = {},
 ) {
     val view = LocalView.current
     // Runtime download + install can take 10+ minutes; keep the screen on while this
@@ -1861,8 +1812,6 @@ private fun StartupErrorScreen(
     message: String?,
     isOffline: Boolean,
     logs: List<String>,
-    themeMode: AppThemeMode = AppThemeMode.DARK,
-    onToggleTheme: () -> Unit = {},
     onRetry: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1878,14 +1827,6 @@ private fun StartupErrorScreen(
                         BrandMark(compact = true)
                         Spacer(Modifier.width(9.dp))
                         Text("Agentic", fontWeight = FontWeight.Bold)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onToggleTheme) {
-                        Icon(
-                            if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = "Toggle theme",
-                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -2096,7 +2037,6 @@ private fun RootScreenHost(
                     onDeleteProject = viewModel::deleteProject,
                     onSettings = { screen = RootScreen.SETTINGS },
                     onPing = viewModel::pingApi,
-                    onToggleTheme = viewModel::toggleTheme,
                     onInstallUpdate = viewModel::installAppUpdate,
                 )
                 RootScreen.AGENT -> AgentScreen(
@@ -2166,11 +2106,8 @@ private fun RootScreenHost(
                 onInput = viewModel::sendTerminalInput,
                 onInterrupt = viewModel::interruptTerminalCommand,
                 onClear = viewModel::clearTerminal,
-                onToggleTheme = viewModel::toggleTheme,
-                themeMode = state.themeMode,
                 liveOutput = terminalLiveOutput,
                 currentCommand = terminalCurrentCommand,
-                showThemeAction = false,
                 showQuickCommands = true,
                 compactHeader = true,
             )
@@ -2264,8 +2201,6 @@ private fun ProviderSetupScreen(
     onDiscover: suspend (ProviderProfile, String) -> ModelDiscoveryResult,
     onValidate: suspend (ProviderProfile, String, List<DiscoveredModel>) -> ConnectionValidation,
     onSelectAgent: (AgentKind) -> Unit,
-    onToggleTheme: (() -> Unit)? = null,
-    themeMode: AppThemeMode = AppThemeMode.DARK,
 ) {
     val context = LocalContext.current
     var step by rememberSaveable { mutableIntStateOf(initialStep) }
@@ -2307,16 +2242,6 @@ private fun ProviderSetupScreen(
                     if (handleBack != null) {
                         IconButton(onClick = handleBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                        }
-                    }
-                },
-                actions = {
-                    if (onToggleTheme != null) {
-                        IconButton(onClick = onToggleTheme) {
-                            Icon(
-                                if (themeMode == AppThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                contentDescription = "Toggle theme",
-                            )
                         }
                     }
                 },
@@ -3086,7 +3011,6 @@ private fun ProjectsScreen(
     onDeleteProject: (String) -> Unit,
     onSettings: () -> Unit,
     onPing: () -> Unit,
-    onToggleTheme: () -> Unit,
     onInstallUpdate: () -> Unit,
 ) {
     var showCreate by rememberSaveable { mutableStateOf(false) }
@@ -3974,6 +3898,8 @@ private fun WorkspaceScreen(
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onBuildAndRunAndroid: () -> Unit,
+    onRefreshChatModels: () -> Unit,
+    onSelectChatModel: (String?) -> Unit,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4201,6 +4127,12 @@ private fun WorkspaceScreen(
                         onTerminalOpened()
                         onTerminalPrepare(command)
                     },
+                    chatModel = state.activeChatModel,
+                    providerModel = state.provider.model,
+                    availableModels = state.chatModels,
+                    discoveringModels = state.chatModelsLoading,
+                    onRefreshModels = onRefreshChatModels,
+                    onSelectModel = onSelectChatModel,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -4278,6 +4210,211 @@ private fun ChatSwitcherDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
+}
+
+/**
+ * Per-chat model picker, mirroring OpenCode's per-conversation model setting.
+ * Lists the models discovered for the active provider, plus an explicit "use
+ * the provider default" option and a manual-entry fallback.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatModelPickerSheet(
+    currentModel: String?,
+    defaultModel: String,
+    models: List<DiscoveredModel>,
+    discovering: Boolean,
+    onRefresh: () -> Unit,
+    onPick: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var search by rememberSaveable { mutableStateOf("") }
+    val filtered = remember(models, search) {
+        val query = search.trim()
+        if (query.isEmpty()) models else models.filter {
+            it.id.contains(query, ignoreCase = true) || it.displayName.contains(query, ignoreCase = true)
+        }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f).padding(horizontal = 20.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Model for this chat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (currentModel.isNullOrBlank()) "Using default · $defaultModel" else "Current · $currentModel",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onRefresh, enabled = !discovering) {
+                    if (discovering) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Refresh, "Refresh models")
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                placeholder = { Text("Search model name or ID") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                // "Use default" row is always first so the escape hatch is reachable
+                // even before discovery has run.
+                item(key = "__default__") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(null) }
+                            .padding(vertical = 14.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Provider default", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                defaultModel,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        ModelRadio(selected = currentModel.isNullOrBlank())
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                }
+                if (filtered.isEmpty()) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                if (models.isEmpty()) "No models found yet — tap refresh" else "No matching models",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+                } else {
+                    items(filtered, key = { it.id }) { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(option.id) }
+                                .padding(vertical = 14.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        option.displayName,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (option.isFree) Text("  FREE", color = Color(0xFF58C99C), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (option.displayName != option.id) {
+                                    Text(
+                                        option.id,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            ModelRadio(selected = currentModel == option.id)
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelRadio(selected: Boolean) {
+    Box(
+        Modifier.size(20.dp).border(
+            if (selected) 2.dp else 1.dp,
+            if (selected) PocketOrange else MaterialTheme.colorScheme.outline,
+            CircleShape,
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Box(Modifier.size(9.dp).background(PocketOrange, CircleShape))
+    }
+}
+
+/**
+ * Compact pill above the composer showing the model this chat will run with.
+ * Tapping it opens [ChatModelPickerSheet]. OpenCode exposes the same idea as a
+ * per-conversation model selector.
+ */
+@Composable
+private fun ChatModelChip(
+    model: String,
+    usingDefault: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                if (usingDefault) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                RoundedCornerShape(20.dp),
+            )
+            .border(
+                1.dp,
+                if (usingDefault) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                RoundedCornerShape(20.dp),
+            )
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+            .alpha(if (enabled) 1f else 0.55f),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Default.SmartToy,
+            null,
+            modifier = Modifier.size(14.dp),
+            tint = if (usingDefault) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            model.ifBlank { "Default model" },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (usingDefault) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(4.dp))
+        Icon(
+            Icons.Default.KeyboardArrowDown,
+            null,
+            modifier = Modifier.size(14.dp),
+            tint = if (usingDefault) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -4734,6 +4871,12 @@ private fun ChatTab(
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
     onRunInTerminal: (String) -> Unit,
+    chatModel: String? = null,
+    providerModel: String = "",
+    availableModels: List<DiscoveredModel> = emptyList(),
+    discoveringModels: Boolean = false,
+    onRefreshModels: () -> Unit = {},
+    onSelectModel: (String?) -> Unit = {},
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
     onContinueHere: () -> Unit = {},
@@ -4747,11 +4890,26 @@ private fun ChatTab(
     }
     var prompt by rememberSaveable { mutableStateOf("") }
     val chatScope = rememberCoroutineScope()
+    var showModelPicker by rememberSaveable { mutableStateOf(false) }
     // True while the newest item (message, live panel, or approval card) is on screen.
     val readerAtBottom by remember {
         derivedStateOf {
             !listState.canScrollForward
         }
+    }
+    if (showModelPicker) {
+        ChatModelPickerSheet(
+            currentModel = chatModel,
+            defaultModel = providerModel.ifBlank { agentKind.defaultModel },
+            models = availableModels,
+            discovering = discoveringModels,
+            onRefresh = onRefreshModels,
+            onPick = { model ->
+                onSelectModel(model)
+                showModelPicker = false
+            },
+            onDismiss = { showModelPicker = false },
+        )
     }
     Column(Modifier.fillMaxSize().imePadding()) {
         Box(Modifier.weight(1f)) {
@@ -4880,6 +5038,13 @@ private fun ChatTab(
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
+                ChatModelChip(
+                    model = chatModel ?: providerModel.ifBlank { agentKind.defaultModel },
+                    usingDefault = chatModel.isNullOrBlank(),
+                    enabled = !isRunning,
+                    onClick = { showModelPicker = true },
+                )
+                Spacer(Modifier.height(8.dp))
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
                         Modifier

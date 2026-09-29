@@ -318,6 +318,11 @@ data class ProjectChat(
     val mode: com.jarves.mh.agent.AgentMode = com.jarves.mh.agent.AgentMode.SIMPLE,
     /** Name of the API key this chat is pinned to (from the saved-keys vault). */
     val keyName: String? = null,
+    /**
+     * Model id this chat runs with, mirroring OpenCode's per-conversation model
+     * setting. Null means "use the provider's default/last-configured model".
+     */
+    val model: String? = null,
 )
 
 /**
