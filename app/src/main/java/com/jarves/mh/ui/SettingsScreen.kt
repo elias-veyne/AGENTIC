@@ -243,13 +243,6 @@ private fun LegacySettingsScreen(
                             checked = state.notifApprovalRequests,
                             onCheckedChange = onSetNotifApprovalRequests,
                         )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        NotificationToggleRow(
-                            title = "Heartbeat warnings",
-                            subtitle = "When a worker stalls and needs recovery or escalation",
-                            checked = state.notifHeartbeatWarnings,
-                            onCheckedChange = onSetNotifHeartbeatWarnings,
-                        )
                     }
                 }
             }
@@ -762,53 +755,12 @@ private fun LegacySettingsScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         InfoRow(
                             icon = Icons.Default.SmartToy,
-                            label = "Agent Mode",
-                            value = when (state.agentMode) {
-                                AgentMode.SIMPLE -> "Single Agent"
-                                AgentMode.AGENTIC -> "Multi-Agent Orchestrator"
-                                AgentMode.COOPERATIVE -> "Cooperative Peers"
-                            },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        InfoRow(
-                            icon = Icons.Default.SmartToy,
                             label = "Installed agents",
                             value = AgentKind.entries.mapNotNull { agent ->
                                 state.installedAgentVersions[agent]?.let { version -> "${agent.title} v$version" }
                             }.joinToString(" · ").ifBlank { "No verified agent installation" },
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                onSwitchMode(
-                                    when (state.agentMode) {
-                                        AgentMode.SIMPLE -> AgentMode.AGENTIC
-                                        AgentMode.AGENTIC -> AgentMode.COOPERATIVE
-                                        AgentMode.COOPERATIVE -> AgentMode.SIMPLE
-                                    }
-                                )
-                            },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.CropRotate, contentDescription = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                "Agent Mode",
-                                fontSize = 14.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Spacer(Modifier.weight(1f))
-                            Text(
-                                when (state.agentMode) {
-                                    AgentMode.SIMPLE -> "Single Agent"
-                                    AgentMode.AGENTIC -> "Multi-Agent Orchestrator"
-                                    AgentMode.COOPERATIVE -> "Cooperative Peers"
-                                },
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                            )
-                        }
 
                         Spacer(Modifier.height(4.dp))
                         OutlinedButton(

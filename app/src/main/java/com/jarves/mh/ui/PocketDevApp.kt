@@ -3162,13 +3162,6 @@ private fun ProjectsScreen(
                         title = "Active Agents",
                         value = state.agentSessions.size.toString(),
                     )
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        accent = Color(0xFF69D69E),
-                        icon = Icons.Default.Bolt,
-                        title = "Tokens",
-                        value = formatTokens(state.cumulativeTokens),
-                    )
                 }
                 Spacer(Modifier.height(16.dp))
 
@@ -3218,20 +3211,6 @@ private fun ProjectsScreen(
                         icon = Icons.Default.Add,
                         title = "New Chat",
                         onClick = onCreateQuickProject,
-                    )
-                    QuickActionCard(
-                        modifier = Modifier.weight(1f),
-                        accent = Color(0xFF7DD3FC),
-                        icon = Icons.Default.History,
-                        title = "History",
-                        onClick = { /* scroll to recent chats */ },
-                    )
-                    QuickActionCard(
-                        modifier = Modifier.weight(1f),
-                        accent = Color(0xFF69D69E),
-                        icon = Icons.Default.Group,
-                        title = "Cooperate",
-                        onClick = { /* switch to cooperative mode */ },
                     )
                 }
                 Spacer(Modifier.height(16.dp))
