@@ -70,11 +70,11 @@ fun OrbPet(
     )
 
     val resolvedTint = tint ?: OrbTints.forState(state)
-    // Match the JS renderer: small canvases resolve the 32px preset, not 64px.
-    val sizePx = minOf(size.width, size.height)
-    val preset = OrbPresets.resolve(state, if (sizePx >= 48f) 64 else 32)
 
     Canvas(modifier = modifier) {
+        // Match the JS renderer: small canvases resolve the 32px preset, not 64px.
+        val sizePx = minOf(size.width, size.height)
+        val preset = OrbPresets.resolve(state, if (sizePx >= 48f) 64 else 32)
         // Soft tinted glow behind the orb so it reads clearly on the dark canvas.
         val glow = Brush.radialGradient(
             colors = listOf(
