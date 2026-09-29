@@ -39,7 +39,24 @@ val GlassSurfaceStrong = Color(0x24FFFFFF)  // 14% white
 val GlassBorder = Color(0x38FFFFFF)       // 22% white
 val GlassHalo = Color(0x4D38BDF8)         // Blue halo
 
-// Color scheme
+// Re-export legacy names for compatibility
+val AgenticBlue = DevilPrimary
+val AgenticViolet = DevilSecondary
+val AgenticBg = DevilBg
+val AgenticSurface = DevilSurface
+val AgenticSurfaceVariant = DevilSurfaceVariant
+val AgenticOutline = DevilOutline
+val AgenticText = DevilText
+val AgenticTextDim = DevilTextMuted
+
+val PocketOrange = DevilPrimary
+val PocketBlue = DevilSecondary
+val PocketGreen = DevilTertiary
+val PocketBackground = DevilBg
+val PocketSurface = DevilSurface
+val PocketSurfaceVariant = DevilSurfaceVariant
+val PocketOutline = DevilOutline
+
 private val DevilDarkColors = darkColorScheme(
     primary = DevilPrimary,
     onPrimary = Color(0xFF001A2E),
@@ -113,4 +130,10 @@ fun DevilTheme(themeMode: AppThemeMode = AppThemeMode.DARK, content: @Composable
         colorScheme = if (isDark) DevilDarkColors else DevilLightColors,
         content = content,
     )
+}
+
+// Backward compatibility alias
+@Composable
+fun PocketTheme(themeMode: AppThemeMode = AppThemeMode.DARK, content: @Composable () -> Unit) {
+    DevilTheme(themeMode, content)
 }
