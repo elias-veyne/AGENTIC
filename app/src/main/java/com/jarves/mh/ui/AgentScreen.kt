@@ -795,19 +795,19 @@ fun AgentScreen(
                             agentKeys.forEach { key ->
                                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)) {
                                     Row(
-                                        Modifier.fillMaxWidth().clickable { onActivateApiKey(key.kind, key.id) }.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        Modifier.fillMaxWidth().clickable { onActivateApiKey(selectedKind, key.id) }.padding(horizontal = 12.dp, vertical = 9.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Column(Modifier.weight(1f)) {
                                             Text(key.name, fontWeight = FontWeight.Medium, fontSize = 13.sp)
                                             Text(
-                                                "${key.kind.title} · ${if (key.isActive) "Active" else "Tap to activate"}",
+                                                "${selectedKind.title} · ${if (key.isActive) "Active" else "Tap to activate"}",
                                                 fontSize = 10.sp,
                                                 color = if (key.isActive) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
                                         AgentSelectionDot(key.isActive)
-                                        IconButton(onClick = { onRemoveApiKey(key.kind, key.id) }) {
+                                        IconButton(onClick = { onRemoveApiKey(selectedKind, key.id) }) {
                                             Icon(Icons.Default.DeleteSweep, "Remove", Modifier.size(17.dp))
                                         }
                                     }

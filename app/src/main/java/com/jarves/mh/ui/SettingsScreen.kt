@@ -938,17 +938,16 @@ private fun ThemeOptionCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
+            .background(Glass.Surface)
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) PocketOrange else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                color = if (selected) Glass.Primary else Glass.Border,
                 shape = RoundedCornerShape(14.dp),
             ),
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier
@@ -960,14 +959,14 @@ private fun ThemeOptionCard(
             Icon(
                 icon,
                 contentDescription = title,
-                tint = if (selected) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (selected) Glass.Primary else Glass.TextMuted,
                 modifier = Modifier.size(22.dp),
             )
             Text(
                 title,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 fontSize = 13.sp,
-                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                color = if (selected) Glass.Text else Glass.TextMuted,
             )
         }
     }
