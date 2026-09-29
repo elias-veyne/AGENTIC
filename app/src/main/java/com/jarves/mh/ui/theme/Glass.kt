@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -230,16 +231,19 @@ fun GlassIconTile(
 // --- cyberpunk accents -------------------------------------------------
 
 /**
- * A brighter, neon-edged glass for the home dashboard tiles. Same AMOLED black
- * base and translucent surface, but with a visible blue hairline that traces
- * the border, a soft outer bloom, and an inner scanline tint — the "little
- * cyberpunk thing" on top of the glass, without changing the palette.
+ * A brighter, neon-edged card for the home dashboard tiles. Same AMOLED black
+ * base, but with a visible blue hairline tracing the border, a soft outer bloom,
+ * and an inner scanline tint — the "little cyberpunk thing" on top of the glass.
+ *
+ * Uses the same solid near-black surface as the onboarding and API-key screens
+ * (`colorScheme.surface`, `#0A0F18`) rather than the translucent `Glass.Surface`,
+ * so dashboard tiles read as the same panels as those screens.
  */
 @Composable
 fun NeonGlassCard(
     modifier: Modifier = Modifier,
     accent: Color = Glass.Primary,
-    radius: Dp = Glass.RadiusCard,
+    radius: Dp = 16.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
@@ -255,29 +259,21 @@ fun NeonGlassCard(
     val base = modifier
         .graphicsLayer { translationY = if (pressed) -2f else 0f }
         .clip(shape)
-        .background(Glass.Surface)
-        .border(BorderStroke(1.dp, accent.copy(alpha = 0.55f)), shape)
+        .background(MaterialTheme.colorScheme.surface)
+        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)), shape)
         .drawBehind {
             // Outer neon bloom hugging the border.
             drawRect(
                 brush = Brush.radialGradient(
-                    colors = listOf(accent.copy(alpha = 0.30f * glow), Color.Transparent),
+                    colors = listOf(accent.copy(alpha = 0.28f * glow), Color.Transparent),
                     center = Offset(size.width * 0.5f, size.height * 0.5f),
                     radius = size.maxDimension * 0.75f,
-                ),
-            )
-            // Inset top highlight.
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Glass.SurfaceInset.copy(alpha = 0.85f), Color.Transparent),
-                    startY = 0f,
-                    endY = size.height * 0.22f,
                 ),
             )
             // Scanline: one thin brighter band a third of the way down.
             drawRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, accent.copy(alpha = 0.07f), Color.Transparent),
+                    colors = listOf(Color.Transparent, accent.copy(alpha = 0.06f), Color.Transparent),
                     startY = size.height * 0.28f,
                     endY = size.height * 0.38f,
                 ),

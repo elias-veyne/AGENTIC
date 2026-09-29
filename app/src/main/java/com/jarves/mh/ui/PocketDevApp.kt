@@ -3116,15 +3116,6 @@ private fun ProjectsScreen(
                         BrandMark(compact = true)
                         Spacer(Modifier.width(7.dp))
                         Text("Agentic", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        AgentPet(
-                            state = PetState.IDLE,
-                            modifier = Modifier.size(width = 30.dp, height = 34.dp),
-                        )
-                        OrbPet(
-                            state = OrbState.BREATHING,
-                            modifier = Modifier.size(width = 30.dp, height = 34.dp),
-                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -3999,7 +3990,7 @@ private fun WorkspaceScreen(
 
     LaunchedEffect(state.activeChatId) {
         userScrolledUp = false
-        if (chatItemCount > 0) chatListState.scrollToItem(chatItemCount - 1)
+        if (chatItemCount > 0) chatListState.animateScrollToItem(chatItemCount - 1)
     }
 
     // When the user actively scrolls/touches the screen, detect if they scrolled up to read thinking/messages.
@@ -4025,9 +4016,8 @@ private fun WorkspaceScreen(
         state.pendingApproval,
     ) {
         if (chatItemCount <= 0 || userScrolledUp || chatListState.isScrollInProgress) return@LaunchedEffect
-        // Snap to the newest item whenever content grows — the user's own
-        // message, streaming tokens, or the agent's finished reply.
-        chatListState.scrollToItem(chatItemCount - 1)
+        // Ease to the newest item instead of snapping, so streaming output glides.
+        chatListState.animateScrollToItem(chatItemCount - 1)
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
@@ -4872,7 +4862,7 @@ private fun ChatTab(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 if (pendingAttachments.isNotEmpty()) {
                     Row(
@@ -4941,10 +4931,10 @@ private fun ChatComposerCapsule(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 5.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            IconButton(onClick = onAttach, enabled = attachEnabled, modifier = Modifier.size(42.dp)) {
+            IconButton(onClick = onAttach, enabled = attachEnabled, modifier = Modifier.size(44.dp)) {
                 Icon(
                     imageVector = Icons.Default.AttachFile,
                     contentDescription = "Attach files",
@@ -4959,7 +4949,7 @@ private fun ChatComposerCapsule(
                     .weight(1f)
                     .padding(horizontal = 2.dp)
                     // Grows with content up to ~5 lines, then scrolls internally.
-                    .heightIn(min = 30.dp, max = 150.dp)
+                    .heightIn(min = 34.dp, max = 150.dp)
                     .verticalScroll(rememberScrollState()),
                 textStyle = TextStyle(
                     color = MaterialTheme.colorScheme.onSurface,
@@ -4985,7 +4975,7 @@ private fun ChatComposerCapsule(
             if (isRunning) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(44.dp)
                         .background(MaterialTheme.colorScheme.error, CircleShape)
                         .clickable(onClick = onStop),
                     contentAlignment = Alignment.Center,
@@ -5000,7 +4990,7 @@ private fun ChatComposerCapsule(
             } else {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(44.dp)
                         .background(
                             Brush.linearGradient(
                                 colors = if (canSend) listOf(Color(0xFF38BDF8), Color(0xFF7DD3FC)) else listOf(Glass.Surface, Glass.Surface),
@@ -5378,9 +5368,7 @@ private fun MessageBubble(
                 message = message,
                 onRunInTerminal = onRunInTerminal,
                 onOpenAttachment = onOpenAttachment,
-                // The orb/pet pair only rides the bubble while the agent is
-                // actively working THIS message; once it lands they vanish.
-                showOrb = showPet && isRunning && (thinkingActive || liveProcess.any { !it.isComplete }),
+                showOrb = false,
                 thinkingActive = thinkingActive,
                 liveProcess = liveProcess,
                 isRunning = isRunning,

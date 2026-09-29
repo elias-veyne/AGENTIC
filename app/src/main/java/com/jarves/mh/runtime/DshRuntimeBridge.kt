@@ -539,6 +539,11 @@ class DshRuntimeBridge(
             sb.appendLine("The optional Android build toolchain is not installed in this PocketDev runtime. You may create Android project files, but do not claim that Gradle, the Android SDK, or aapt2 is available and do not present build or install commands as verified. Tell the user to add the Android development stack in PocketDev Settings before building.")
         }
         sb.appendLine("For local servers, give a clear start command and never use a kill command that searches its own command text with pgrep, because it can terminate the terminal itself.")
+        // The model's training data lags reality; ground it in the real date and
+        // give it an explicit fetch path so "latest" questions stop answering
+        // from the training cutoff.
+        sb.appendLine("Today is ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.US).format(java.util.Date())}. Your knowledge has a cutoff, so for anything current (news, releases, prices, status) do not rely on memory — fetch it.")
+        sb.appendLine("You have `curl` and `wget` in the terminal with network access. For current information, fetch a real source (e.g. `curl -sL https://en.wikipedia.org/wiki/Special:Random` is not a search; prefer the source's own page or a plain-text news endpoint) and cite what you read. If a fetch fails or you cannot verify, say so instead of guessing from memory.")
         sb.appendLine("</project_workspace>")
         sb.appendLine()
         if (priorMessages.isEmpty()) {

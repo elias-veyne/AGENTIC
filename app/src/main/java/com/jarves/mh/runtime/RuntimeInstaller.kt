@@ -174,7 +174,7 @@ class RuntimeInstaller(private val context: Context) {
         if (coreNeeded) {
             aptInstall(
                 proot,
-                listOf("git", "ca-certificates"),
+                listOf("git", "ca-certificates", "curl", "wget"),
                 "Installing Git and base tools",
                 0.70f,
                 onProgress,
@@ -1565,8 +1565,8 @@ class RuntimeInstaller(private val context: Context) {
         private const val ROOTFS_SHA256 = "f9b999afb4c4b10193087ea8c11be36d688f19e609b05179b571f29357954b52"
         private const val NODE_VERSION = "v24.19.0"
         private const val LANGUAGE_TOOLS_VERSION = "node-v24.19.0-python3-v1"
-        private const val CORE_TOOLS_VERSION = "core-bundle-2026.09.5"
-        private const val LEGACY_CORE_TOOLS_VERSION = "core-bundle-2026.09.4"
+        private const val CORE_TOOLS_VERSION = "core-bundle-2026.09.6"
+        private const val LEGACY_CORE_TOOLS_VERSION = "core-bundle-2026.09.5"
         private const val SYSTEM_UPGRADE_VERSION = "ubuntu-maintenance-v1"
         private const val ANDROID_TOOLS_VERSION = "sdk36-build-tools35-gradle8.14.3-maven-2026.09"
         private const val ANDROID_ASSET_BASE = "https://appdevforall.org/dev-assets/debug"
