@@ -198,6 +198,7 @@ import com.jarves.mh.ui.chat.PeerGrid
 import com.jarves.mh.ui.chat.PeerStatus
 import com.jarves.mh.ui.chat.PlanCard
 import com.jarves.mh.ui.chat.SubtaskChip
+import com.jarves.mh.ui.chat.smoothFollowBottom
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
@@ -3959,8 +3960,11 @@ private fun WorkspaceScreen(
         state.pendingApproval,
     ) {
         if (chatItemCount <= 0 || userScrolledUp || chatListState.isScrollInProgress) return@LaunchedEffect
-        // Ease to the newest item instead of snapping, so streaming output glides.
-        chatListState.animateScrollToItem(chatItemCount - 1)
+        // Continuous frame-driven ease toward the newest content — the Compose
+        // equivalent of CSS scroll-behavior:smooth. animateScrollToItem targets
+        // a stale offset the moment the last message starts growing again, which
+        // is what made the follow scroll jerky and made it "only work sometimes".
+        chatListState.smoothFollowBottom(chatItemCount)
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(WorkspaceTab.CHAT) }
