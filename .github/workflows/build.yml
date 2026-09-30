@@ -49,7 +49,7 @@ jobs:
           printf '%s' "$MH_UPLOAD_STORE_FILE" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/keystore/agentic-release.jks"
           ls -la "$RUNNER_TEMP/keystore/agentic-release.jks"
         env:
-          MH_UPLOAD_STORE_FILE: \${{ secrets.MH_UPLOAD_STORE_FILE }}
+          MH_UPLOAD_STORE_FILE: ${{ secrets.MH_UPLOAD_STORE_FILE }}
 
       - name: Compute next version code
         # versionCode must increase for every release, otherwise Android treats
@@ -59,12 +59,12 @@ jobs:
         run: echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build release APK (online, signed)
-        run: ./gradlew :app:assembleOnlineRelease --no-daemon --stacktrace -PappVersionCode=\${{ steps.version.outputs.code }}
+        run: ./gradlew :app:assembleOnlineRelease --no-daemon --stacktrace -PappVersionCode=${{ steps.version.outputs.code }}
         env:
-          MH_UPLOAD_STORE_FILE: \${{ runner.temp }}/keystore/agentic-release.jks
-          MH_UPLOAD_STORE_PASSWORD: \${{ secrets.MH_UPLOAD_STORE_PASSWORD }}
-          MH_UPLOAD_KEY_ALIAS: \${{ secrets.MH_UPLOAD_KEY_ALIAS }}
-          MH_UPLOAD_KEY_PASSWORD: \${{ secrets.MH_UPLOAD_KEY_PASSWORD }}
+          MH_UPLOAD_STORE_FILE: ${{ runner.temp }}/keystore/agentic-release.jks
+          MH_UPLOAD_STORE_PASSWORD: ${{ secrets.MH_UPLOAD_STORE_PASSWORD }}
+          MH_UPLOAD_KEY_ALIAS: ${{ secrets.MH_UPLOAD_KEY_ALIAS }}
+          MH_UPLOAD_KEY_PASSWORD: ${{ secrets.MH_UPLOAD_KEY_PASSWORD }}
 
       - name: Run unit tests
         run: ./gradlew :app:testOnlineDebugUnitTest --no-daemon
@@ -72,7 +72,7 @@ jobs:
       - name: Rename APK with version
         run: |
           mkdir -p release-out
-          cp app/build/outputs/apk/online/release/*.apk "release-out/agentic-online-release-v\${{ steps.version.outputs.code }}.apk"
+          cp app/build/outputs/apk/online/release/*.apk "release-out/agentic-online-release-v${{ steps.version.outputs.code }}.apk"
           ls -la release-out
 
       - name: Upload signed APK artifact
