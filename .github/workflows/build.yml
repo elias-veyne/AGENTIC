@@ -42,10 +42,11 @@ jobs:
         # The keystore is stored as a base64 repository secret so CI can sign
         # builds with the same key every run. A permanent signing key is what
         # lets a new APK *update* an installed one instead of failing with an
-        # INSTALL_PARSE_FAILED_INCONSISTENT_SIGNATURES error.
+        # INSTALL_PARSE_FAILED_INCONSISTENT_SIGNATURES error. tr strips any
+        # stray whitespace/newlines the secret value may carry.
         run: |
           mkdir -p "$RUNNER_TEMP/keystore"
-          echo "$MH_UPLOAD_STORE_FILE" | base64 -d > "$RUNNER_TEMP/keystore/agentic-release.jks"
+          printf '%s' "$MH_UPLOAD_STORE_FILE" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/keystore/agentic-release.jks"
           ls -la "$RUNNER_TEMP/keystore/agentic-release.jks"
         env:
           MH_UPLOAD_STORE_FILE: \${{ secrets.MH_UPLOAD_STORE_FILE }}
