@@ -186,8 +186,10 @@ Agentic uses **DeepSeek Harness** as its primary coding agent, with a flexible p
 | **OpenRouter** | Gateway | Supported | Supported | `Supported` | Routes compatible models through one API key |
 | **Custom API** | Endpoint Override | Compatible | Compatible | `Experimental` | User-configured gateway |
 
+**Multiple models at once.** You are not limited to one provider per session. The model registry stores every model you connect as an independent entry — its own label, base URL, model id, and API key — so you can add your first DeepSeek model, then use **Add new model** to connect an OpenRouter or custom-endpoint model alongside it. Each chat picks its model from this list, and the home screen's **Total Agents** card shows how many models are connected while **Active Agents** shows how many are actively working.
+
 > [!NOTE]
-> API keys are stored with hardware-backed Android Keystore AES-256-GCM encryption. Keys are sent directly to your chosen provider; no intermediate relays collect your prompts or code.
+> API keys are stored with hardware-backed Android Keystore AES-256-GCM encryption, each scoped to its own model. Keys are sent directly to your chosen provider; no intermediate relays collect your prompts or code.
 
 <br />
 
