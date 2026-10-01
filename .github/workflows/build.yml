@@ -14,6 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history, not the default shallow clone: the versionCode below
+          # is the commit count, so a depth-1 checkout would always yield 1
+          # and Android would never see a new build as an update.
+          fetch-depth: 0
           submodules: recursive
 
       - uses: actions/setup-java@v4
