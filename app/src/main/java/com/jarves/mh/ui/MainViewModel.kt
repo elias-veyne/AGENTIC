@@ -178,6 +178,7 @@ data class AppUiState(
     val agent3Provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val agent3ActiveApiKeyName: String? = null,
     val themeMode: com.jarves.mh.ui.theme.AppThemeMode = com.jarves.mh.ui.theme.AppThemeMode.DARK,
+    val selectedAgentMode: com.jarves.mh.agent.AgentMode = com.jarves.mh.agent.AgentMode.SIMPLE,
     val apiPingStatus: ApiPingStatus = ApiPingStatus.IDLE,
     val apiPingMessage: String? = null,
     val projects: List<Project> = emptyList(),
@@ -4009,4 +4010,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val AGENT2_SCOPE = "agent2"
         const val AGENT3_SCOPE = "agent3"
     }
+}
+
+// Extension function to set agent mode in the ViewModel
+fun MainViewModel.setAgentMode(mode: AgentMode) {
+    _state.update { it.copy(selectedAgentMode = mode) }
 }

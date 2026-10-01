@@ -6,6 +6,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import java.time.Instant
 
 class Orchestrator(
     private val bus: MessageBus,
@@ -192,5 +193,22 @@ class Orchestrator(
 
     fun getCheckpoint(taskId: String): String {
         return store.getTaskState(taskId)?.output ?: ""
+    }
+
+    /**
+     * Generate a recovery message for self-healing when an agent fails.
+     * This should be called when heartbeat monitoring detects a failure.
+     */
+    suspend fun generateRecoveryMessage(taskId: String, failedAgentId: AgentId): AgentMessage.ContinueTask? {
+        val taskState = store.getTaskState(taskId) ?: return null
+        
+        // Only generate recovery if we have valid checkpoint state
+        if (taskState.output.isBlank()) return null
+        
+        return AgentMessage.ContinueTask(
+            taskId = taskId,
+            checkpoint = taskState.output,
+            retryCount = 1
+        )
     }
 }
