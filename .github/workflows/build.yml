@@ -2,7 +2,7 @@ name: Build and test
 
 on:
   push:
-    branches: [ main, work/ui-restructure, work/amoled-theme-orbs ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -59,7 +59,7 @@ jobs:
         run: echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build release APK (online, signed)
-        run: ./gradlew :app:assembleOnlineRelease --no-daemon --stacktrace -PappVersionCode=${{ steps.version.outputs.code }}
+        run: ./gradlew :app:assembleOnlineRelease --no-daemon --stacktrace -PappVersionCode=${{ steps.version.outputs.code }} -PappVersionName=2.0.0
         env:
           MH_UPLOAD_STORE_FILE: ${{ runner.temp }}/keystore/agentic-release.jks
           MH_UPLOAD_STORE_PASSWORD: ${{ secrets.MH_UPLOAD_STORE_PASSWORD }}
