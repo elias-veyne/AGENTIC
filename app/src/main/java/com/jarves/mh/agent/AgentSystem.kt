@@ -87,6 +87,9 @@ class AgentSystem(
                         is HeartbeatEvent.Failed -> {
                             _events.emit(AgentEvent.AgentFailed(event.agentId, "Missed ${event.missedBeats} heartbeats"))
                         }
+                        is HeartbeatEvent.MaxRetriesExceeded -> {
+                            _events.emit(AgentEvent.AgentFailed(event.agentId, "Exhausted ${event.totalRetries} recovery retries"))
+                        }
                         is HeartbeatEvent.Received -> { /* keepalive — no action needed */ }
                     }
                 }
