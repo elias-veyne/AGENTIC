@@ -15,6 +15,8 @@ import com.jarves.mh.BuildConfig
 import com.jarves.mh.data.ApiKeyVault
 import com.jarves.mh.data.ApiKeyInfo
 import com.jarves.mh.data.AppPreferences
+import com.jarves.mh.data.ConfiguredModel
+import com.jarves.mh.data.ModelRegistry
 import com.jarves.mh.agent.AgentId
 import com.jarves.mh.agent.AgentMode
 import com.jarves.mh.agent.AgentSystem

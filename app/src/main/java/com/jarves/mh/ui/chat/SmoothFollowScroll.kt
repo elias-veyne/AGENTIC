@@ -41,10 +41,10 @@ suspend fun LazyListState.smoothFollowBottom(itemCount: Int, ease: Float = 0.18f
         if (isScrollInProgress) return
         val layout = layoutInfo ?: return
         val lastVisible = layout.visibleItemsInfo.lastOrNull()
-        val gap = if (lastVisible != null && lastVisible.index >= lastIndex) {
+        val gap: Float = if (lastVisible != null && lastVisible.index >= lastIndex) {
             // The final message is on screen: the exact distance its bottom edge
             // still sits below the end of the viewport.
-            (lastVisible.offset + lastVisible.size) - layout.viewportEndOffset
+            ((lastVisible.offset + lastVisible.size) - layout.viewportEndOffset).toFloat()
         } else {
             // The final message is further down than we can see (e.g. a large
             // block just arrived): take a viewport-sized stride toward it so the

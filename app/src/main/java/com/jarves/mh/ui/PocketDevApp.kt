@@ -368,6 +368,13 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onBuildAndRunAndroid = viewModel::buildAndRunAndroidApp,
             onRefreshChatModels = viewModel::refreshChatModels,
             onSelectChatModel = viewModel::selectChatModel,
+            onAddConfiguredModel = { label, kind, baseUrl, model, secret ->
+                viewModel.addConfiguredModel(label, kind, baseUrl, model, secret = secret)
+            },
+            onUpdateConfiguredModel = { id, label, kind, baseUrl, model, secret ->
+                viewModel.updateConfiguredModel(id, label, kind, baseUrl, model, secret = secret)
+            },
+            onRemoveConfiguredModel = viewModel::removeConfiguredModel,
         )
         !state.onboardingComplete && state.startupStage == StartupStage.READY ->
             DemoOnboarding(
@@ -3911,6 +3918,9 @@ private fun WorkspaceScreen(
     onBuildAndRunAndroid: () -> Unit,
     onRefreshChatModels: () -> Unit,
     onSelectChatModel: (String?) -> Unit,
+    onAddConfiguredModel: (String, ProviderKind, String, String, String) -> Unit,
+    onUpdateConfiguredModel: (String, String, ProviderKind, String, String, String) -> Unit,
+    onRemoveConfiguredModel: (String) -> Unit,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -4150,12 +4160,12 @@ private fun WorkspaceScreen(
                     configuredModels = state.configuredModels,
                     activeRegistryModel = state.activeChatRegistryModel,
                     onSaveModel = { label, kind, baseUrl, model, secret ->
-                        viewModel.addConfiguredModel(label, kind, baseUrl, model, secret = secret)
+                        onAddConfiguredModel(label, kind, baseUrl, model, secret)
                     },
                     onUpdateModel = { id, label, kind, baseUrl, model, secret ->
-                        viewModel.updateConfiguredModel(id, label, kind, baseUrl, model, secret = secret)
+                        onUpdateConfiguredModel(id, label, kind, baseUrl, model, secret)
                     },
-                    onRemoveModel = viewModel::removeConfiguredModel,
+                    onRemoveModel = onRemoveConfiguredModel,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
