@@ -16,6 +16,7 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import com.jarves.mh.BuildConfig
+import com.jarves.mh.data.ConfiguredModel
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.io.File
@@ -92,7 +93,6 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
@@ -214,7 +214,6 @@ import com.jarves.mh.model.ProjectChat
 import com.jarves.mh.model.RecentChat
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
-import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
 import com.jarves.mh.model.inferredDshApiForUrl
 import com.jarves.mh.model.providersForAgent
 import com.jarves.mh.model.ToolRequest
@@ -255,7 +254,6 @@ import kotlinx.coroutines.launch
 
 import com.jarves.mh.ui.GitHubConnectionScreen
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExtendedFloatingActionButton
 
 private enum class RootScreen(val label: String, val icon: ImageVector) {
@@ -3064,7 +3062,7 @@ private fun ProjectsScreen(
                 SectionLabel("Overview")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     StatCard(
                         modifier = Modifier.weight(1f),
@@ -3079,6 +3077,17 @@ private fun ProjectsScreen(
                         icon = Icons.Default.SmartToy,
                         title = "Active Agents",
                         value = state.agentSessions.size.toString(),
+                    )
+                    // Total Agents counts every connected model — i.e. how many
+                    // API keys are wired up in the multi-provider registry — as
+                    // opposed to Active Agents, which is how many are working
+                    // right now.
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        accent = Color(0xFFA78BFA),
+                        icon = Icons.Default.Key,
+                        title = "Total Agents",
+                        value = state.connectedModelCount.toString(),
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -4138,6 +4147,15 @@ private fun WorkspaceScreen(
                     discoveringModels = state.chatModelsLoading,
                     onRefreshModels = onRefreshChatModels,
                     onSelectModel = onSelectChatModel,
+                    configuredModels = state.configuredModels,
+                    activeRegistryModel = state.activeChatRegistryModel,
+                    onSaveModel = { label, kind, baseUrl, model, secret ->
+                        viewModel.addConfiguredModel(label, kind, baseUrl, model, secret = secret)
+                    },
+                    onUpdateModel = { id, label, kind, baseUrl, model, secret ->
+                        viewModel.updateConfiguredModel(id, label, kind, baseUrl, model, secret = secret)
+                    },
+                    onRemoveModel = viewModel::removeConfiguredModel,
                 )
                 WorkspaceTab.FILES -> FilesTab(
                     files = state.workspaceFiles,
@@ -4232,6 +4250,10 @@ private fun ChatModelPickerSheet(
     onRefresh: () -> Unit,
     onPick: (String?) -> Unit,
     onDismiss: () -> Unit,
+    configuredModels: List<ConfiguredModel> = emptyList(),
+    activeRegistryModel: String? = null,
+    onAddModel: () -> Unit = {},
+    onEditModel: (ConfiguredModel) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var search by rememberSaveable { mutableStateOf("") }
@@ -4280,6 +4302,27 @@ private fun ChatModelPickerSheet(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
+                // ── Registry: the flat list of configured models, each with its own
+                // provider, base URL and key. This is the primary surface — the
+                // discovered list below is just the model catalogue of whichever
+                // provider this chat is currently riding.
+                item(key = "__registry__") {
+                    ModelRegistryList(
+                        models = configuredModels,
+                        activeModelId = activeRegistryModel,
+                        onSelect = onPick,
+                        onEdit = onEditModel,
+                        onAddNew = onAddModel,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Other models",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                }
                 // "Use default" row is always first so the escape hatch is reachable
                 // even before discovery has run.
                 item(key = "__default__") {
@@ -4882,6 +4925,11 @@ private fun ChatTab(
     discoveringModels: Boolean = false,
     onRefreshModels: () -> Unit = {},
     onSelectModel: (String?) -> Unit = {},
+    configuredModels: List<ConfiguredModel> = emptyList(),
+    activeRegistryModel: String? = null,
+    onSaveModel: (label: String, kind: ProviderKind, baseUrl: String, model: String, secret: String) -> Unit = { _, _, _, _, _ -> },
+    onUpdateModel: (id: String, label: String, kind: ProviderKind, baseUrl: String, model: String, secret: String) -> Unit = { _, _, _, _, _, _ -> },
+    onRemoveModel: (String) -> Unit = {},
     readOnly: Boolean = false,
     readOnlyBlocked: Boolean = false,
     onContinueHere: () -> Unit = {},
@@ -4896,6 +4944,10 @@ private fun ChatTab(
     var prompt by rememberSaveable { mutableStateOf("") }
     val chatScope = rememberCoroutineScope()
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
+    // Hosts the AddModelSheet: null = closed. Non-null with adding = true is the
+    // fresh-add flow; a real [ConfiguredModel] is the edit flow.
+    var addingModel by rememberSaveable { mutableStateOf(false) }
+    var editingModel by remember { mutableStateOf<ConfiguredModel?>(null) }
     // True while the newest item (message, live panel, or approval card) is on screen.
     val readerAtBottom by remember {
         derivedStateOf {
@@ -4914,6 +4966,42 @@ private fun ChatTab(
                 showModelPicker = false
             },
             onDismiss = { showModelPicker = false },
+            configuredModels = configuredModels,
+            activeRegistryModel = activeRegistryModel,
+            onAddModel = {
+                showModelPicker = false
+                addingModel = true
+                editingModel = null
+            },
+            onEditModel = { entry ->
+                showModelPicker = false
+                addingModel = false
+                editingModel = entry
+            },
+        )
+    }
+    if (addingModel || editingModel != null) {
+        AddModelSheet(
+            editing = editingModel,
+            existingLabels = remember(configuredModels) { configuredModels.map { it.label } },
+            onSave = { label, kind, baseUrl, model, secret ->
+                if (editingModel != null) {
+                    onUpdateModel(editingModel!!.id, label, kind, baseUrl, model, secret)
+                } else {
+                    onSaveModel(label, kind, baseUrl, model, secret)
+                }
+                addingModel = false
+                editingModel = null
+            },
+            onRemove = { id ->
+                onRemoveModel(id)
+                addingModel = false
+                editingModel = null
+            },
+            onDismiss = {
+                addingModel = false
+                editingModel = null
+            },
         )
     }
     Column(Modifier.fillMaxSize().imePadding()) {

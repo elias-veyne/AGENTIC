@@ -323,6 +323,16 @@ data class ProjectChat(
      * setting. Null means "use the provider's default/last-configured model".
      */
     val model: String? = null,
+    /**
+     * Id of the [com.jarves.mh.data.ConfiguredModel] this chat is bound to.
+     *
+     * AGENTIC is multi-model: several providers can be configured at once, each
+     * with their own base URL and key. Pinning a chat to a registry entry makes
+     * that binding sticky, so different chats can ride different providers
+     * simultaneously without re-keying anything global. Null means "use the
+     * active registry model" — mirrors how [model] falls back to the default.
+     */
+    val registryModelId: String? = null,
 )
 
 /**

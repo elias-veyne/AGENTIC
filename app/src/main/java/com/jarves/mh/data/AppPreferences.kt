@@ -413,6 +413,7 @@ class AppPreferences(private val context: Context) {
                 put("mode", chat.mode.name)
                 chat.keyName?.let { put("keyName", it) }
                 chat.model?.takeIf { it.isNotBlank() }?.let { put("model", it) }
+                chat.registryModelId?.takeIf { it.isNotBlank() }?.let { put("registryModelId", it) }
             })
         }
         File(projectDir, "index.json").writeText(arr.toString())
@@ -435,6 +436,7 @@ class AppPreferences(private val context: Context) {
                             .getOrDefault(AgentMode.SIMPLE),
                         keyName = obj.optString("keyName", null),
                         model = obj.optString("model", null)?.takeIf { it.isNotBlank() },
+                        registryModelId = obj.optString("registryModelId", null)?.takeIf { it.isNotBlank() },
                     )
                 }.sortedByDescending { it.updatedAtMillis }
             }.getOrDefault(emptyList())

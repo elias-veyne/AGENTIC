@@ -24,6 +24,7 @@ import com.jarves.mh.model.ChangeItem
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChatAttachment
 import com.jarves.mh.model.DevStack
+import com.jarves.mh.model.defaultDshApiForProvider
 import com.jarves.mh.model.Project
 import com.jarves.mh.model.ProjectKind
 import com.jarves.mh.model.ProjectChat
@@ -156,8 +157,16 @@ data class AppUiState(
      *  model picker can list them without re-hitting the provider each time. */
     val chatModels: List<com.jarves.mh.network.DiscoveredModel> = emptyList(),
     val chatModelsLoading: Boolean = false,
+    /** Every model the user has configured (multi-provider registry). */
+    val configuredModels: List<com.jarves.mh.data.ConfiguredModel> = emptyList(),
+    /** id of the registry model new chats use by default. */
+    val activeModelId: String? = null,
+    /** How many configured models have a connected key — Home's "Total Agents". */
+    val connectedModelCount: Int = 0,
     /** Model pinned to the active chat (per-chat model, OpenCode-style). */
     val activeChatModel: String? = null,
+    /** Registry model the active chat is bound to (multi-provider pinning). */
+    val activeChatRegistryModel: String? = null,
     /** Saved-key name pinned to the active chat (per-chat API key). */
     val activeChatKeyName: String? = null,
     /** Independent second agent (Agent 2) used by Agentic mode / cooperative peers. */
@@ -278,6 +287,7 @@ data class AppUiState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val vault = ApiKeyVault(application)
     private val preferences = AppPreferences(application)
+    private val modelRegistry = ModelRegistry(application)
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
 
     init {
@@ -391,6 +401,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(provider = testProvider) }
         }
 
+        // Multi-provider registry: migrate the legacy single provider into the
+        // registry as the user's first model so existing setups keep working.
+        // The registry is additive — it never clears the legacy provider.
+        seedModelRegistry()
+        refreshModelRegistry()
+
         val loadedProjects = preferences.loadProjects()
         val cleanedProjects = loadedProjects.filter { project ->
             if (project.kind == ProjectKind.QUICK_PROJECT) {
@@ -418,6 +434,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     val state: StateFlow<AppUiState> = _state.asStateFlow()
+
+    /**
+     * One-time migration: fold the legacy single-provider setup into the registry
+     * as the user's first model. Idempotent — once the registry is populated this
+     * is a no-op, and it never touches the legacy provider itself.
+     */
+    private fun seedModelRegistry() {
+        if (modelRegistry.list().isNotEmpty()) return
+        val legacy = _state.value.provider
+        val legacySecret = vault.get(legacy.kind.name) ?: vault.get(legacy.kind.name.lowercase())
+        if (legacySecret.isNullOrBlank()) return
+        modelRegistry.add(
+            label = legacy.kind.title,
+            kind = legacy.kind,
+            baseUrl = legacy.baseUrl,
+            model = legacy.model,
+            dshApi = legacy.dshApi,
+            secret = legacySecret,
+        )
+    }
+
+    /** Re-publishes the registry into [state] so every UI surface stays in sync. */
+    private fun refreshModelRegistry() {
+        val models = modelRegistry.list()
+        _state.update {
+            it.copy(
+                configuredModels = models,
+                activeModelId = modelRegistry.activeId(),
+                connectedModelCount = modelRegistry.connectedCount(),
+            )
+        }
+    }
+
+    /** Adds an independently configured model; the first one becomes the default. */
+    fun addConfiguredModel(
+        label: String,
+        kind: ProviderKind,
+        baseUrl: String,
+        model: String,
+        dshApi: String = defaultDshApiForProvider(kind),
+        secret: String,
+    ) {
+        modelRegistry.add(label, kind, baseUrl, model, dshApi, secret)
+        refreshModelRegistry()
+    }
+
+    /** Reconfigures an existing model in place. */
+    fun updateConfiguredModel(
+        id: String,
+        label: String? = null,
+        kind: ProviderKind? = null,
+        baseUrl: String? = null,
+        model: String? = null,
+        dshApi: String? = null,
+        secret: String? = null,
+    ) {
+        modelRegistry.update(id, label, kind, baseUrl, model, dshApi, secret)
+        refreshModelRegistry()
+    }
+
+    /** Removes a model, keeping another one selected so a working model survives. */
+    fun removeConfiguredModel(id: String) {
+        modelRegistry.remove(id)
+        refreshModelRegistry()
+    }
+
+    /** Sets the model new chats use by default. */
+    fun setActiveModel(id: String) {
+        modelRegistry.setActive(id)
+        refreshModelRegistry()
+    }
+
+    /** Resolves a chat's pinned model id to the profile + secret the bridge needs. */
+    fun resolveModel(modelId: String?): Pair<ProviderProfile, String>? {
+        val entry = modelRegistry.byId(modelId) ?: return null
+        val secret = modelRegistry.secretFor(entry) ?: return null
+        return entry.toProfile() to secret
+    }
 
     private val _terminalLines = MutableStateFlow<List<TerminalOutputLine>>(
         listOf(
@@ -2730,6 +2824,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeChatMode = chat.mode,
                 activeChatKeyName = chat.keyName,
                 activeChatModel = chat.model,
+                activeChatRegistryModel = chat.registryModelId,
                 chatModeLocked = false,
                 totalChats = it.totalChats + 1,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
@@ -2782,6 +2877,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeChatMode = chat.mode,
                 activeChatKeyName = chat.keyName,
                 activeChatModel = chat.model,
+                activeChatRegistryModel = chat.registryModelId,
                 chatModeLocked = saved.any { it.fromUser } || saved.any { !it.fromUser },
                 messages = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) },
                 liveProcess = emptyList(),
@@ -2808,17 +2904,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Pins the active chat to a specific model id (OpenCode-style per-chat model).
-     *  Pass null to fall back to the provider's configured model. */
+     *  Pass null to fall back to the provider's configured model.
+     *
+     *  Registry-aware: an id that matches a [ConfiguredModel] pins the chat to
+     *  that whole entry — its base URL and key ride along, so a chat can switch
+     *  providers without touching anything global. */
     fun selectChatModel(model: String?) {
         val current = _state.value
         val project = current.activeProject ?: return
         val chatId = current.activeChatId ?: return
         val clean = model?.trim()?.takeIf { it.isNotBlank() }
+        val registryHit = clean?.let { modelRegistry.byId(it) }
         val updatedChats = current.projectChats.map {
-            if (it.id == chatId) it.copy(model = clean) else it
+            if (it.id == chatId) {
+                it.copy(
+                    model = registryHit?.displayModel ?: clean,
+                    // Pin the registry entry only when the pick was a registry
+                    // model; a free-text/discovered id must not claim a entry.
+                    registryModelId = registryHit?.id,
+                )
+            } else it
         }
         preferences.saveProjectChats(project.id, updatedChats)
-        _state.update { it.copy(projectChats = updatedChats, activeChatModel = clean) }
+        _state.update {
+            it.copy(
+                projectChats = updatedChats,
+                activeChatModel = registryHit?.displayModel ?: clean,
+                activeChatRegistryModel = registryHit?.id,
+            )
+        }
     }
 
     /** Fetches the provider's model list once so the per-chat picker can show it. */
@@ -3067,24 +3181,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
         updateActiveChatTitle(requestText)
+        // Multi-provider registry takes priority: when a chat is bound to a
+        // configured model, that entry supplies the whole profile — base URL,
+        // model id AND key — independently of the legacy global provider. This
+        // is what lets different chats ride different providers at once.
+        val registryBinding = resolveModel(state.value.activeChatRegistryModel)
         // Per-chat key pinning: if this chat is pinned to a specific saved key,
         // resolve that key's secret here and carry it on the request. We must
         // NOT call activateApiKey() — that writes the vault's *global* active
         // key for the provider, which would silently re-key every other chat
         // and every agent role.
         val pinned = state.value.activeChatKeyName
-        val pinnedSecret = pinned?.takeIf { it.isNotBlank() }?.let { name ->
-            vault.credentials(state.value.provider.kind.name)
-                .firstOrNull { it.name == name }?.secret
-        }
+        val pinnedSecret = registryBinding?.second
+            ?: pinned?.takeIf { it.isNotBlank() }?.let { name ->
+                vault.credentials(state.value.provider.kind.name)
+                    .firstOrNull { it.name == name }?.secret
+            }
         // Per-chat model (OpenCode-style): a chat may pin a model id that
         // overrides the provider's configured default for this conversation only.
         val chatModel = state.value.activeChatModel?.takeIf { it.isNotBlank() }
-        val runProvider = if (chatModel != null && chatModel != state.value.provider.model) {
-            state.value.provider.copy(model = chatModel)
-        } else {
-            state.value.provider
-        }
+        val runProvider = registryBinding?.first
+            ?: if (chatModel != null && chatModel != state.value.provider.model) {
+                state.value.provider.copy(model = chatModel)
+            } else {
+                state.value.provider
+            }
         _state.update {
             val startedAt = System.currentTimeMillis()
             val promptTokens = estimateTokens(prompt.trim())
