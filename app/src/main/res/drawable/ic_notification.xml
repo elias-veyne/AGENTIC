@@ -3,8 +3,28 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Monochrome silhouette for notification small icons: white chat bubble, transparent background. -->
+    <!--
+        Monochrome orb silhouette for notification small icons.
+
+        Notification small icons are rendered by the system as a flat silhouette,
+        so the glyph must (a) match the launcher mark and (b) carry a hollow
+        interior, otherwise it collapses into a solid filled blob. This is the
+        launcher orb reduced to its essential geometry: a bold ring (the orb)
+        with a centered dot (the sheen), drawn with evenOdd fill so the ring's
+        interior stays fully transparent. White fill on a transparent background
+        is the required small-icon contract.
+    -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M6,4h12a3,3 0 0,1 3,3v7a3,3 0 0,1 -3,3h-7l-4,3.5v-3.5h-1a3,3 0 0,1 -3,-3v-7a3,3 0 0,1 3,-3z" />
+        android:fillType="evenOdd"
+        android:pathData="
+            M3.5,12
+            a8.5,8.5 0 1,0 17,0
+            a8.5,8.5 0 1,0 -17,0 z
+            M7,12
+            a5,5 0 1,0 10,0
+            a5,5 0 1,0 -10,0 z
+            M10,12
+            a2,2 0 1,0 4,0
+            a2,2 0 1,0 -4,0 z" />
 </vector>

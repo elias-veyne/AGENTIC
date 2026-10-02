@@ -1,4 +1,4 @@
-Initial Mobile Harness alpha:
+Initial Agentic alpha:
 - Persistent projects and Quick Projects
 - Streaming AI coding chat and tool activity
 - Ubuntu 20.04 ARM64 local runtime

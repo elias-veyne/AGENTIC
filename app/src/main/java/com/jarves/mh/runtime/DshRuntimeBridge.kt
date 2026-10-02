@@ -15,11 +15,14 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -49,43 +52,126 @@ class DshRuntimeBridge(
 
     fun updateGithubToken(token: String?) {
         githubToken = token?.takeIf { it.isNotBlank() }
+        // The view model calls this on the main thread; the write is small but
+        // touches disk, so it goes to IO rather than risking an ANR.
+        credentialScope.launch { writeGithubCredential(githubToken) }
     }
+
+    /**
+     * Materializes the GitHub PAT inside the guest Linux home. Injecting it as
+     * an env var at [startSession] only helps sessions spawned *after* the user
+     * pastes it; a session already running — the common case, since the user
+     * adds the token mid-conversation — would never see it. Writing it to disk
+     * means the running agent can pick it up immediately, `git` authenticates
+     * through a credential helper instead of needing the env var, and the
+     * token leaves the guest again when the user clears it.
+     */
+    private fun writeGithubCredential(token: String?) {
+        val rootfs = runCatching { installer.installedRuntime().rootfs }.getOrNull() ?: return
+        val secretFile = File(rootfs, "root/.secrets/github-token")
+        val helperFile = File(rootfs, "usr/local/bin/git-credential-pocket")
+        val credFile = File(rootfs, "root/.pocket-credentials.gitconfig")
+        val gitconfig = File(rootfs, "root/.gitconfig")
+        // One self-contained block so teardown removes exactly what we added.
+        // Inside an [include] section the key is `path`, resolved relative to
+        // this config file's own directory (i.e. /root).
+        val block = buildString {
+            appendLine(GITCONFIG_MARKER)
+            appendLine("[include]")
+            append("\tpath = ${credFile.name}\n")
+        }
+
+        if (token.isNullOrBlank()) {
+            secretFile.delete()
+            helperFile.delete()
+            credFile.delete()
+            val current = runCatching { gitconfig.readText() }.getOrDefault("")
+            if (block in current) {
+                val without = current.replace(block, "")
+                if (without.isBlank()) gitconfig.delete() else gitconfig.writeText(without)
+            }
+            return
+        }
+
+        File(rootfs, "root/.secrets").mkdirs()
+        secretFile.writeText(token)
+        helperFile.writeText(
+            """
+            #!/bin/sh
+            # Written by Agentic: hands the saved GitHub PAT to git on request.
+            # Never echoes the token to the terminal or into shell history.
+            case "${'$'}1" in
+            get)
+              token=$(cat /root/.secrets/github-token 2>/dev/null) || exit 0
+              [ -n "${'$'}token" ] || exit 0
+              echo "protocol=https"
+              echo "host=github.com"
+              echo "username=x-access-token"
+              echo "password=${'$'}token"
+              ;;
+            esac
+            exit 0
+            """.trimIndent()
+        )
+        helperFile.setExecutable(true, false)
+        // `git` resolves `helper = pocket` by searching PATH for
+        // git-credential-pocket, which /usr/local/bin provides.
+        credFile.writeText("$GITCONFIG_MARKER\n[credential]\n\thelper = pocket\n")
+        val existing = runCatching { gitconfig.readText() }.getOrDefault("")
+        if (block !in existing) {
+            val prefix = if (existing.isNotEmpty() && !existing.endsWith("\n")) "\n" else ""
+            gitconfig.appendText(prefix + block)
+        }
+    }
+
     private val installer = RuntimeInstaller(context)
+    /** Off-main-thread home for [writeGithubCredential]; a failing write must
+     *  never cancel an in-flight credential update. */
+    private val credentialScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
     private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
     override val events: Flow<RuntimeEvent> = eventBus
     private val finishedSessions = ConcurrentHashMap.newKeySet<String>()
-    @Volatile private var activeProcess: Process? = null
-    @Volatile private var activeSessionId: String? = null
-    @Volatile private var userStopRequested: Boolean = false
-    @Volatile private var activeProjectSlug: String? = null
-    @Volatile private var taskStartedAtElapsedRealtime: Long = 0L
-    @Volatile private var lastForegroundProgressAt: Long = 0L
-    @Volatile private var foregroundResultPosted: Boolean = false
-    @Volatile private var lastThinkingUpdateAt: Long = 0L
+
+    /**
+     * Runtime state for one session. Sessions genuinely overlap — Agentic shards
+     * run concurrently, cooperative peers start alongside the head, and a
+     * key-failure retry can fire while another session is still alive — so the
+     * process handle, stop flag, and foreground bookkeeping live per session
+     * instead of in single shared fields that two sessions would clobber.
+     */
+    private class SessionState(val projectSlug: String, val startedAtElapsedRealtime: Long) {
+        @Volatile var process: Process? = null
+        @Volatile var userStopRequested: Boolean = false
+        @Volatile var lastForegroundProgressAt: Long = 0L
+        @Volatile var foregroundResultPosted: Boolean = false
+        @Volatile var lastThinkingUpdateAt: Long = 0L
+    }
+
+    private val sessions = ConcurrentHashMap<String, SessionState>()
 
     override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String?): String = withContext(Dispatchers.IO + NonCancellable) {
         val sessionId = UUID.randomUUID().toString()
         finishedSessions.remove(sessionId)
-        activeSessionId = sessionId
-        userStopRequested = false
-        activeProjectSlug = projectSlug
-        taskStartedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
-        lastForegroundProgressAt = 0L
-        foregroundResultPosted = false
-        lastThinkingUpdateAt = 0L
+        val state = SessionState(
+            projectSlug = projectSlug,
+            startedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime(),
+        )
+        sessions[sessionId] = state
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
-        pushForegroundProgress("Starting DeepSeek Harness…")
+        pushForegroundProgress(sessionId, "Starting DeepSeek Harness…")
         val secret = resolvedSecret?.takeIf { it.isNotBlank() } ?: secretFor(provider).orEmpty()
         if (secret.isBlank()) {
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, "No API key is saved for ${provider.kind.title}."))
             return@withContext sessionId
         }
 
+        var sessionHome: File? = null
+        var stopToken: (() -> Unit)? = null
         runCatching {
-            RuntimeTaskController.stopAction = {
-                userStopRequested = true
-                val running = activeProcess
+            stopToken = RuntimeTaskController.registerStopAction {
+                state.userStopRequested = true
+                val running = state.process
                 if (running != null) {
                     Thread {
                         running.destroy()
@@ -94,8 +180,11 @@ class DshRuntimeBridge(
                     }.start()
                 }
             }
-            startForegroundRuntime(projectSlug)
+            startForegroundRuntime(sessionId, projectSlug)
             val installed = installer.installedRuntime()
+            // A PAT saved before the runtime existed never reached disk; the
+            // write bailed on the missing rootfs. Re-apply now that it is here.
+            writeGithubCredential(githubToken)
             check(installer.isAgentInstalled(com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS)) {
                 "DeepSeek Harness is not installed. Open Settings → Coding agent to install it."
             }
@@ -104,9 +193,11 @@ class DshRuntimeBridge(
             checkpoints.createCheckpoint(projectId, workspace)
             val before = checkpoints.snapshot(workspace)
             val route = DshRouteMapper.forProfile(provider)
-            writeDshSettings(installed.rootfs, route, provider)
+            sessionHome = writeDshSettings(installed.rootfs, sessionId, route, provider)
             val environment = linkedMapOf(
-                "DSH_HOME" to DSH_HOME_GUEST_PATH,
+                // Each session gets its own dsh home so overlapping sessions on
+                // different providers never race on one shared settings.yaml.
+                "DSH_HOME" to dshHomeGuestPath(sessionId),
                 // PocketDev already confines the whole Linux guest with PRoot. Let dsh
                 // use every tool inside that boundary without an unavailable approval UI.
                 "DSH_PERMISSION_MODE" to "danger-full-access",
@@ -137,8 +228,8 @@ class DshRuntimeBridge(
                 // symlink after the temp file is removed, losing the real file.
                 emulateHardLinks = false,
             )
-            activeProcess = process
-            if (userStopRequested) process.destroy()
+            state.process = process
+            if (state.userStopRequested) process.destroy()
             val sdkResult = runSdkSession(
                 process = process,
                 sessionId = sessionId,
@@ -158,34 +249,37 @@ class DshRuntimeBridge(
             } else if (!File(checkpoints.checkpointDir(projectId), "changes.json").isFile) {
                 acceptLastChanges(projectId)
             }
-            if (exit == 0 && sdkResult.completed && !userStopRequested) {
+            if (exit == 0 && sdkResult.completed && !state.userStopRequested) {
                 emitCompletedOnce(sessionId)
                 finishForegroundRuntime(
+                    sessionId = sessionId,
                     completed = true,
                     projectName = projectSlug,
                     detail = "DeepSeek Harness finished the task in $projectSlug.",
                 )
             } else {
-                if (userStopRequested) throw DshSessionException("Stopped by user")
+                if (state.userStopRequested) throw DshSessionException("Stopped by user")
                 error(sdkResult.failure.ifBlank { "DeepSeek Harness stopped with exit code $exit" })
             }
         }.onFailure { error ->
             Log.e("DshBridge", "Session failed", error)
             val message = friendlyError(error)
             emitFailureOnce(sessionId, message)
-            if (userStopRequested) {
-                cancelForegroundRuntime()
+            if (state.userStopRequested) {
+                cancelForegroundRuntime(sessionId)
             } else {
                 finishForegroundRuntime(
+                    sessionId = sessionId,
                     completed = false,
                     projectName = projectSlug,
                     detail = message,
                 )
             }
         }
-        activeProcess = null
-        activeSessionId = null
-        RuntimeTaskController.stopAction = null
+        // The dsh process has exited by now, so its per-session home is dead config.
+        sessionHome?.let { runCatching { it.deleteRecursively() } }
+        sessions.remove(sessionId)
+        stopToken?.invoke()
         sessionId
     }
 
@@ -344,17 +438,18 @@ class DshRuntimeBridge(
     }
 
     override suspend fun stopSession(sessionId: String) = withContext(Dispatchers.IO) {
-        if (activeSessionId == sessionId) {
-            userStopRequested = true
-            activeProcess?.destroy()
-            delay(500)
-            if (activeProcess?.isAlive == true) activeProcess?.destroyForcibly()
-            emitFailureOnce(sessionId, "Stopped by user")
-        }
+        val state = sessions[sessionId] ?: return@withContext
+        state.userStopRequested = true
+        state.process?.destroy()
+        delay(500)
+        if (state.process?.isAlive == true) state.process?.destroyForcibly()
+        emitFailureOnce(sessionId, "Stopped by user")
     }
 
     override suspend fun stopActiveSession() {
-        activeSessionId?.let { stopSession(it) }
+        // Shards and cooperative peers run alongside the head, so a global "stop"
+        // must reach every live session rather than just whichever started last.
+        sessions.keys.toList().forEach { stopSession(it) }
     }
 
     fun configureProjectRoot(projectId: String, rootPath: String) {
@@ -426,8 +521,8 @@ class DshRuntimeBridge(
         true
     }
 
-    private fun writeDshSettings(rootfs: File, route: DshRoute, provider: ProviderProfile) {
-        val home = File(rootfs, DSH_HOME_GUEST_PATH.removePrefix("/")).apply { mkdirs() }
+    private fun writeDshSettings(rootfs: File, sessionId: String, route: DshRoute, provider: ProviderProfile): File {
+        val home = File(rootfs, dshHomeGuestPath(sessionId).removePrefix("/")).apply { mkdirs() }
         val body = buildString {
             appendLine("agent-default-model:")
             appendLine("  provider: ${route.name}")
@@ -444,6 +539,17 @@ class DshRuntimeBridge(
             }
         }
         File(home, "settings.yaml").writeText(body)
+        return home
+    }
+
+    /**
+     * Per-session dsh home inside the shared rootfs. `$DSH_HOME` is already an
+     * environment variable, so isolating the config is just a matter of naming a
+     * directory per session — the rootfs itself stays shared and read-only-ish.
+     */
+    private fun dshHomeGuestPath(sessionId: String): String {
+        val suffix = sessionId.trim().lowercase().filter { it.isLetterOrDigit() || it == '-' }.take(64)
+        return "/root/.dsh-$suffix"
     }
 
     private fun yamlQuote(value: String): String = "'${value.replace("'", "''")}'"
@@ -459,8 +565,9 @@ class DshRuntimeBridge(
         val summary = text.replace(Regex("\\s+"), " ").trim().take(2_000)
         if (summary.isBlank()) return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (force || now - lastThinkingUpdateAt >= 400) {
-            lastThinkingUpdateAt = now
+        val state = sessions[sessionId] ?: return
+        if (force || now - state.lastThinkingUpdateAt >= 400) {
+            state.lastThinkingUpdateAt = now
             eventBus.emit(
                 RuntimeEvent.ReasoningSummary(
                     sessionId = sessionId,
@@ -478,8 +585,9 @@ class DshRuntimeBridge(
         if (finishedSessions.add(sessionId)) {
             eventBus.emit(RuntimeEvent.SessionCompleted(sessionId))
             finishForegroundRuntime(
+                sessionId = sessionId,
                 completed = true,
-                projectName = activeProjectSlug ?: "your project",
+                projectName = sessions[sessionId]?.projectSlug ?: "your project",
                 detail = "DeepSeek Harness finished the task.",
             )
         }
@@ -488,12 +596,14 @@ class DshRuntimeBridge(
     private suspend fun emitFailureOnce(sessionId: String, reason: String) {
         if (finishedSessions.add(sessionId)) {
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, reason))
-            if (userStopRequested) {
-                cancelForegroundRuntime()
+            val state = sessions[sessionId]
+            if (state?.userStopRequested == true) {
+                cancelForegroundRuntime(sessionId)
             } else {
                 finishForegroundRuntime(
+                    sessionId = sessionId,
                     completed = false,
-                    projectName = activeProjectSlug ?: "your project",
+                    projectName = state?.projectSlug ?: "your project",
                     detail = reason,
                 )
             }
@@ -549,8 +659,11 @@ class DshRuntimeBridge(
             sb.appendLine("The bundled Maven cache handles the base toolchain; Gradle may download project-specific libraries normally. Set android.useAndroidX=true for AndroidX or Compose projects.")
             sb.appendLine("PocketDev globally configures Gradle to use the SDK's ARM64 aapt2. Do not use the x86_64 Maven aapt2, investigate its architecture, or add android.aapt2FromMavenOverride to the project.")
             sb.appendLine("Use the installed `gradle` command for Android builds; do not ask the user to install Android Studio, an SDK, Gradle, ADB, or Termux.")
-        } else {
+        } else if (com.jarves.mh.BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
             sb.appendLine("The optional Android build toolchain is not installed in this PocketDev runtime. You may create Android project files, but do not claim that Gradle, the Android SDK, or aapt2 is available and do not present build or install commands as verified. Tell the user to add the Android development stack in PocketDev Settings before building.")
+        } else {
+            sb.appendLine("This online build ships without the Android toolchain — it is ~570 MB and on-device builds are rarely the point. You may create and edit Android project files, but do not claim that Gradle, the Android SDK, aapt2, or any on-device build is available, and never present a local build or install command as verified.")
+            sb.appendLine("To produce an APK, write a GitHub Actions workflow that builds and signs the release, commit it, and let CI produce the artifact the user can then download and install. Say clearly that the build happens on CI, not on this phone.")
         }
         sb.appendLine("For local servers, give a clear start command and never use a kill command that searches its own command text with pgrep, because it can terminate the terminal itself.")
         // The model's training data lags reality; ground it in the real date and
@@ -559,7 +672,7 @@ class DshRuntimeBridge(
         sb.appendLine("Today is ${java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.US).format(java.util.Date())}. Your knowledge has a cutoff, so for anything current (news, releases, prices, status) do not rely on memory — fetch it.")
         sb.appendLine("You have `curl` and `wget` in the terminal with network access. For current information, fetch a real source (e.g. `curl -sL https://en.wikipedia.org/wiki/Special:Random` is not a search; prefer the source's own page or a plain-text news endpoint) and cite what you read. If a fetch fails or you cannot verify, say so instead of guessing from memory.")
         githubToken?.takeIf { it.isNotBlank() }?.let {
-            sb.appendLine("A GitHub personal access token is available in the environment as \$GITHUB_TOKEN (also \$GH_TOKEN). Use it to clone and push private repositories, create repos, and open pull requests — the user has authorized it. `git clone https://github.com/owner/repo` works for private repos with the credential helper already configured; prefer the `gh` CLI for repo creation and PRs.")
+            sb.appendLine("A GitHub personal access token is available — the user has authorized it for private repos, pushes, repo creation, and PRs. Read it with `cat /root/.secrets/github-token` (it is also exported as \$GITHUB_TOKEN / \$GH_TOKEN if this session started after you saved it). `git` already authenticates through the configured credential helper, so `git clone https://github.com/owner/repo` works for private repos with no extra flags; run `gh auth login --with-token < /root/.secrets/github-token` once if you need the `gh` CLI for repo creation and PRs. Never echo the raw token back to the user.")
         }
         sb.appendLine("</project_workspace>")
         sb.appendLine()
@@ -588,19 +701,19 @@ class DshRuntimeBridge(
         return sb.toString()
     }
 
-    private fun pushForegroundProgress(detailRaw: String) {
-        if (activeSessionId == null) return
+    private fun pushForegroundProgress(sessionId: String, detailRaw: String) {
+        val state = sessions[sessionId] ?: return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastForegroundProgressAt < FOREGROUND_PROGRESS_MIN_INTERVAL_MS) return
-        lastForegroundProgressAt = now
+        if (now - state.lastForegroundProgressAt < FOREGROUND_PROGRESS_MIN_INTERVAL_MS) return
+        state.lastForegroundProgressAt = now
         val detail = detailRaw.replace(Regex("\\s+"), " ").trim().take(110)
-        val elapsedMs = taskStartedAtElapsedRealtime.takeIf { it > 0 }?.let { now - it } ?: 0L
-        val text = if (elapsedMs > 0L) "$detail · ${formatElapsedShort(elapsedMs)}" else detail
+        val text = "$detail · ${formatElapsedShort(now - state.startedAtElapsedRealtime)}"
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
                     .setAction(RuntimeExecutionService.ACTION_PROGRESS)
-                    .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, activeProjectSlug)
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId)
+                    .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, state.projectSlug)
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, text),
             )
         }
@@ -614,18 +727,20 @@ class DshRuntimeBridge(
         return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
     }
 
-    private fun startForegroundRuntime(projectName: String) {
+    private fun startForegroundRuntime(sessionId: String, projectName: String) {
         ContextCompat.startForegroundService(
             context,
             android.content.Intent(context, RuntimeExecutionService::class.java)
                 .setAction(RuntimeExecutionService.ACTION_START)
+                .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId)
                 .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
         )
     }
 
-    private fun finishForegroundRuntime(completed: Boolean, projectName: String, detail: String) {
-        if (foregroundResultPosted) return
-        foregroundResultPosted = true
+    private fun finishForegroundRuntime(sessionId: String, completed: Boolean, projectName: String, detail: String) {
+        val state = sessions[sessionId]
+        if (state?.foregroundResultPosted == true) return
+        state?.foregroundResultPosted = true
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
@@ -633,6 +748,7 @@ class DshRuntimeBridge(
                         if (completed) RuntimeExecutionService.ACTION_COMPLETE
                         else RuntimeExecutionService.ACTION_FAILED,
                     )
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId)
                     .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName)
                     .putExtra(RuntimeExecutionService.EXTRA_DETAIL, detail),
             )
@@ -642,13 +758,15 @@ class DshRuntimeBridge(
         }
     }
 
-    private fun cancelForegroundRuntime() {
-        if (foregroundResultPosted) return
-        foregroundResultPosted = true
+    private fun cancelForegroundRuntime(sessionId: String) {
+        val state = sessions[sessionId]
+        if (state?.foregroundResultPosted == true) return
+        state?.foregroundResultPosted = true
         runCatching {
             context.startService(
                 android.content.Intent(context, RuntimeExecutionService::class.java)
-                    .setAction(RuntimeExecutionService.ACTION_CANCELLED),
+                    .setAction(RuntimeExecutionService.ACTION_CANCELLED)
+                    .putExtra(RuntimeExecutionService.EXTRA_SESSION_ID, sessionId),
             )
         }.onFailure {
             context.stopService(android.content.Intent(context, RuntimeExecutionService::class.java))
@@ -660,6 +778,7 @@ class DshRuntimeBridge(
     companion object {
         const val DSH_HOME_GUEST_PATH = "/root/.dsh"
         const val FALLBACK_KEY_ENV = "MH_DSH_API_KEY"
+        const val GITCONFIG_MARKER = "# managed by Agentic"
         private const val FOREGROUND_PROGRESS_MIN_INTERVAL_MS = 750L
         private const val SDK_INITIALIZE_ID = 1
         private const val SDK_PROMPT_ID = 2
@@ -681,6 +800,19 @@ internal data class DshRoute(
 internal data class DshCustomRoute(val api: String, val baseUrl: String)
 
 internal object DshRouteMapper {
+    /**
+     * Zen's Anthropic-wire models are served from the `/zen` root — the Anthropic
+     * SDK appends `/v1/messages`, yielding `https://opencode.ai/zen/v1/messages`.
+     * Every other wire (responses, chat/completions, google) hangs off `/zen/v1`.
+     * Confirmed live: `/zen/v1/messages` answers 401 while `/zen/v1/v1/messages`
+     * answers 404, and pi-ai's own catalog records `https://opencode.ai/zen` as
+     * the base for its anthropic-messages Zen models.
+     */
+    private fun zenBaseUrlFor(api: String): String =
+        if (api == "anthropic-messages") ZEN_ANTHROPIC_BASE_URL else ProviderKind.OPENCODE_ZEN.defaultBaseUrl
+
+    private const val ZEN_ANTHROPIC_BASE_URL = "https://opencode.ai/zen"
+
     fun forProfile(profile: ProviderProfile): DshRoute {
         val model = profile.model.ifBlank { profile.kind.defaultModel }
         return when (profile.kind) {
@@ -707,12 +839,17 @@ internal object DshRouteMapper {
                 defaultModel = model,
                 custom = DshCustomRoute(profile.dshApi.ifBlank { "anthropic-messages" }, profile.resolvedBaseUrl),
             )
-            ProviderKind.OPENCODE_ZEN -> DshRoute(
-                name = "opencode-zen",
-                keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
-                defaultModel = model,
-                custom = DshCustomRoute("openai-responses", profile.resolvedBaseUrl),
-            )
+            ProviderKind.OPENCODE_ZEN -> {
+                // Zen serves each model family on its own wire endpoint, so both
+                // the protocol and the base URL resolve from the model.
+                val api = dshApiForProfile(profile.kind, profile.model, profile.dshApi)
+                DshRoute(
+                    name = "opencode-zen",
+                    keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
+                    defaultModel = model,
+                    custom = DshCustomRoute(api, zenBaseUrlFor(api)),
+                )
+            }
             ProviderKind.NVIDIA_NIM -> DshRoute(
                 name = "nvidia-nim",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,

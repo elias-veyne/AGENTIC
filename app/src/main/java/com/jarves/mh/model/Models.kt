@@ -94,6 +94,46 @@ fun defaultDshApiForProvider(kind: ProviderKind): String = when (kind) {
 }
 
 /**
+ * OpenCode Zen serves every model family on its own wire endpoint, so the dsh
+ * route protocol is resolved per model rather than fixed for the whole provider.
+ *
+ * Verified 1 Oct 2026 against https://opencode.ai/docs/zen/ and the live
+ * `/zen/v1/models` catalog:
+ *   /zen/v1/responses          gpt-*, grok-*, muse-spark-*
+ *   /zen/v1/messages           claude-*, and most qwen3.* (Anthropic wire)
+ *   /zen/v1/chat/completions   deepseek-*, glm-*, kimi-*, minimax-*, free tiers
+ *   /zen/v1/models/<id>        gemini-* (Google wire)
+ *   /zen/v1/systemone          jev-* — not a dsh wire, falls back to chat/completions
+ *
+ * `qwen3.8-max` is the one mixed family: it rides `/chat/completions` while the
+ * rest of qwen rides `/messages`, so it is called out explicitly. Prefix rules
+ * cover the rest, including models added after this table was written.
+ */
+fun dshApiForZenModel(modelId: String): String {
+    val id = modelId.trim().lowercase(Locale.ROOT)
+    return when {
+        id.isEmpty() -> "openai-completions"
+        id.startsWith("gemini-") -> "google-generative-ai"
+        id.startsWith("claude-") -> "anthropic-messages"
+        id == "qwen3.8-max" -> "openai-completions"
+        id.startsWith("qwen") -> "anthropic-messages"
+        id.startsWith("gpt-") || id.startsWith("grok-") || id.startsWith("muse-spark-") -> "openai-responses"
+        else -> "openai-completions"
+    }
+}
+
+/**
+ * dsh custom-route wire protocol for a saved profile. Fixed kinds keep their
+ * constant; OpenCode Zen resolves per model family; everything else honors the
+ * stored choice. [defaultDshApiForProvider] stays the fallback for blank input.
+ */
+fun dshApiForProfile(kind: ProviderKind, model: String, dshApi: String): String = when {
+    kind == ProviderKind.OPENCODE_ZEN -> dshApiForZenModel(model)
+    kind.fixedProtocol -> defaultDshApiForProvider(kind)
+    else -> dshApi.ifBlank { defaultDshApiForProvider(kind) }
+}
+
+/**
  * Best-effort protocol choice for a user-entered custom gateway URL.
  * The picker remains editable because a URL alone cannot prove a gateway's wire format.
  */

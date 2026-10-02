@@ -440,6 +440,12 @@ class RuntimeInstaller(private val context: Context) {
         stack: DevStack,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
+        // The Android toolchain is ~570 MB and on-device builds are rarely the point of an
+        // online install — CI can build and sign the APK instead. Only the offline flavor,
+        // which already bundles the stack into the APK, is allowed to install it.
+        check(BuildConfig.OFFLINE_RUNTIME_BUNDLES || stack != DevStack.ANDROID) {
+            "The Android toolchain is not available in the online build. Build via CI instead."
+        }
         val runtime = installedRuntime()
         if (isStackInstalled(stack)) return
         applyStack(runtime.proot, stack, 0.05f, 0.95f, onProgress)
@@ -1307,7 +1313,9 @@ class RuntimeInstaller(private val context: Context) {
             environment = buildMap {
                 put("HOME", "/root")
                 val androidReady = File(rootfs, "root/.pocket-android-tools-version").readTextOrNull() == ANDROID_TOOLS_VERSION
-                val basePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                // /root/.local/bin holds the GitHub CLI (`gh`); without it the
+                // agent can see the token but never invoke the tool that uses it.
+                val basePath = "/usr/local/sbin:/usr/local/bin:/root/.local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 if (androidReady) {
                     put("ANDROID_HOME", "/root/android-sdk")
                     put("ANDROID_SDK_ROOT", "/root/android-sdk")

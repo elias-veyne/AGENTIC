@@ -96,6 +96,7 @@ import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.DSH_PROTOCOL_PROVIDERS
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
+import com.jarves.mh.model.dshApiForProfile
 import com.jarves.mh.model.defaultDshApiForProvider
 import com.jarves.mh.model.inferredDshApiForUrl
 import com.jarves.mh.model.providersForAgent
@@ -1123,7 +1124,7 @@ private fun AgentProviderCard(
                         append(baseUrl.ifBlank { "Base URL required" })
                         if (state.agentKind == AgentKind.DEEPSEEK_HARNESS && selectedKind in DSH_PROTOCOL_PROVIDERS) {
                             append(" · ")
-                            append(if (selectedKind.fixedProtocol) defaultDshApiForProvider(selectedKind) else dshApi)
+                            append(dshApiForProfile(selectedKind, model.trim(), dshApi))
                         }
                     },
                     expanded = endpointExpanded,

@@ -11,6 +11,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      # Needed to publish the GitHub Release that the in-app updater reads.
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -85,3 +88,38 @@ jobs:
           name: agentic-online-release
           path: release-out/*.apk
           if-no-files-found: error
+
+      - name: Publish release for the in-app updater
+        # The app's APP_UPDATE_MANIFEST_URL points at
+        # releases/latest/download/agentic-update.json on this repo. Without a
+        # published Release carrying that manifest the updater has nothing to
+        # fetch, so publish it here on every main build.
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          APK="release-out/agentic-online-release-v${{ steps.version.outputs.code }}.apk"
+          SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
+          SIZE="$(stat -c%s "$APK")"
+          cat > agentic-update.json <<EOF
+          {
+            "versionCode": ${{ steps.version.outputs.code }},
+            "versionName": "2.0.0",
+            "notes": "Latest Agentic build.",
+            "artifacts": {
+              "online": {
+                "url": "https://github.com/elias-veyne/AGENTIC/releases/latest/download/agentic-online-release-v${{ steps.version.outputs.code }}.apk",
+                "sha256": "$SHA",
+                "sizeBytes": $SIZE
+              }
+            }
+          }
+          EOF
+          # Recreate the rolling "latest" release so updates always point forward.
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest \
+            --title "Agentic ${{ steps.version.outputs.code }}" \
+            --notes "Signed online release build (versionCode ${{ steps.version.outputs.code }})." \
+            --latest \
+            "$APK" agentic-update.json
+        env:
+          GH_TOKEN: ${{ github.token }}

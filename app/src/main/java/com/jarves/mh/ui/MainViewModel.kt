@@ -353,6 +353,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             githubPat = preferences.githubPat.takeIf(String::isNotBlank),
             selectedDevStacks = preferences.selectedDevStacks.mapNotNull { name ->
                 runCatching { DevStack.valueOf(name) }.getOrNull()
+            }.filter {
+                // Online builds cannot install the Android toolchain, so a selection carried
+                // over from an offline install is dropped rather than silently re-downloaded.
+                BuildConfig.OFFLINE_RUNTIME_BUNDLES || it != DevStack.ANDROID
             }.toSet() + DevStack.WEB,
         ),
     )
@@ -624,7 +628,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (normalized.isBlank() || _state.value.projectTerminalRunning || projectTerminalProcess?.isAlive == true) return
         if (requiresAndroidToolchain(normalized) && !installer.isStackInstalled(DevStack.ANDROID)) {
             _state.update {
-                it.copy(toastMessage = "Android build tools are not installed. Add Android in Settings → Development stacks.")
+                it.copy(
+                    toastMessage = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                        "Android build tools are not installed. Add Android in Settings → Development stacks."
+                    } else {
+                        "This build ships without the Android toolchain. Commit your project and let your repo's CI build the APK instead."
+                    },
+                )
             }
             return
         }
@@ -967,7 +977,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.androidBuildRunning) return
         if (!installer.isStackInstalled(DevStack.ANDROID)) {
             _state.update {
-                it.copy(toastMessage = "Android build tools are not installed. Add Android in Settings → Development stacks.")
+                it.copy(
+                    toastMessage = if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
+                        "Android build tools are not installed. Add Android in Settings → Development stacks."
+                    } else {
+                        "This build ships without the Android toolchain. Commit your project and let your repo's CI build the APK instead."
+                    },
+                )
             }
             return
         }

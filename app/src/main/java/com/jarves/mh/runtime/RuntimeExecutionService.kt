@@ -10,12 +10,23 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.jarves.mh.MainActivity
 import com.jarves.mh.R
+import java.util.concurrent.ConcurrentHashMap
 
 internal object RuntimeTaskController {
-    @Volatile var stopAction: (() -> Unit)? = null
+    private val stopActions = ConcurrentHashMap.newKeySet<() -> Unit>()
+
+    /**
+     * Registers a stop handler for one session and returns a token that
+     * unregisters it. Sessions overlap, so the stop button has to reach every
+     * live session rather than only the one that happened to start last.
+     */
+    fun registerStopAction(action: () -> Unit): () -> Unit {
+        stopActions.add(action)
+        return { stopActions.remove(action) }
+    }
 
     fun requestStop() {
-        stopAction?.invoke()
+        stopActions.forEach { runCatching(it) }
     }
 }
 
@@ -24,7 +35,9 @@ class RuntimeExecutionService : Service() {
     private var projectName: String = "your project"
     private var notificationTitle: String = "Agentic is working"
     private var canStop: Boolean = true
-    private var taskRunning: Boolean = false
+    // Sessions can overlap (Agentic shards, cooperative peers), so the foreground
+    // task tracks every live one instead of tearing down on the first finish.
+    private val sessionProjects = ConcurrentHashMap<String, String>()
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +48,7 @@ class RuntimeExecutionService : Service() {
         intent?.getStringExtra(EXTRA_PROJECT_NAME)?.takeIf(String::isNotBlank)?.let { projectName = it }
         intent?.getStringExtra(EXTRA_TITLE)?.takeIf(String::isNotBlank)?.let { notificationTitle = it }
         if (intent?.hasExtra(EXTRA_CAN_STOP) == true) canStop = intent.getBooleanExtra(EXTRA_CAN_STOP, true)
+        val sessionId = intent?.getStringExtra(EXTRA_SESSION_ID)
         when (intent?.action ?: ACTION_START) {
             ACTION_STOP -> {
                 RuntimeTaskController.requestStop()
@@ -45,7 +59,8 @@ class RuntimeExecutionService : Service() {
             }
             ACTION_PROGRESS -> {
                 // Live step updates only matter while a task is actually running.
-                if (!taskRunning) return START_NOT_STICKY
+                if (sessionProjects.isEmpty()) return START_NOT_STICKY
+                sessionId?.let { sessionProjects[it] = projectName }
                 val detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
                     ?: "The agent is working in $projectName"
                 getSystemService(NotificationManager::class.java).notify(
@@ -54,23 +69,29 @@ class RuntimeExecutionService : Service() {
                 )
             }
             ACTION_COMPLETE -> finishTask(
+                sessionId,
                 title = "Task completed",
                 detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Agentic finished working in $projectName.",
                 failed = false,
             )
             ACTION_FAILED -> finishTask(
+                sessionId,
                 title = "Task needs attention",
                 detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Agentic could not finish the task.",
                 failed = true,
             )
             ACTION_CANCELLED -> {
-                taskRunning = false
-                releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                sessionId?.let { sessionProjects.remove(it) }
+                if (sessionProjects.isEmpty()) {
+                    releaseWakeLock()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                } else {
+                    refreshRunningNotification()
+                }
             }
             else -> {
-                taskRunning = true
+                sessionId?.let { sessionProjects[it] = projectName }
                 startForeground(
                     RUNNING_NOTIFICATION_ID,
                     runningNotification("The agent is working in $projectName", includeStop = canStop),
@@ -103,11 +124,34 @@ class RuntimeExecutionService : Service() {
         return builder.build()
     }
 
-    private fun finishTask(title: String, detail: String, failed: Boolean) {
-        taskRunning = false
-        releaseWakeLock()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
+    private fun finishTask(sessionId: String?, title: String, detail: String, failed: Boolean) {
+        sessionId?.let { sessionProjects.remove(it) }
+        getSystemService(NotificationManager::class.java).notify(
+            RESULT_NOTIFICATION_ID,
+            resultNotification(title, detail, failed),
+        )
+        if (sessionProjects.isEmpty()) {
+            releaseWakeLock()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            // Other sessions are still alive: keep the foreground task up and hand
+            // the ongoing notification to one of them instead of killing background work.
+            refreshRunningNotification()
+        }
+    }
+
+    private fun refreshRunningNotification() {
+        val next = sessionProjects.values.firstOrNull() ?: return
+        projectName = next
+        getSystemService(NotificationManager::class.java).notify(
+            RUNNING_NOTIFICATION_ID,
+            runningNotification("The agent is working in $next", includeStop = canStop),
+        )
+    }
+
+    private fun resultNotification(title: String, detail: String, failed: Boolean): android.app.Notification =
+        NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(detail)
@@ -117,9 +161,6 @@ class RuntimeExecutionService : Service() {
             .setCategory(if (failed) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
-        getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
-        stopSelf()
-    }
 
     private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
         this,
@@ -157,6 +198,7 @@ class RuntimeExecutionService : Service() {
         const val ACTION_FAILED = "com.jarves.mh.FAIL_RUNTIME"
         const val ACTION_CANCELLED = "com.jarves.mh.CANCEL_RUNTIME"
         const val EXTRA_PROJECT_NAME = "project_name"
+        const val EXTRA_SESSION_ID = "session_id"
         const val EXTRA_DETAIL = "detail"
         const val EXTRA_TITLE = "title"
         const val EXTRA_CAN_STOP = "can_stop"

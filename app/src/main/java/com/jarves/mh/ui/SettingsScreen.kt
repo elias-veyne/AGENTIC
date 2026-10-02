@@ -2,6 +2,7 @@ package com.jarves.mh.ui
 
 import android.content.Intent
 import android.provider.Settings
+import com.jarves.mh.BuildConfig
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -229,7 +230,13 @@ import androidx.compose.material.icons.filled.Link
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(12.dp))
-                        DevStack.entries.forEachIndexed { index, stack ->
+                        // Online builds cannot install the ~570 MB Android toolchain; only the
+                        // offline flavor bundles it. Hide it here so the list matches what the
+                        // runtime will actually allow.
+                        val stacks = DevStack.entries.filter {
+                            BuildConfig.OFFLINE_RUNTIME_BUNDLES || it != DevStack.ANDROID
+                        }
+                        stacks.forEachIndexed { index, stack ->
                             val installed = stack in state.installedDevStacks
                             val installing = state.devStackInstalling == stack
                             Column(Modifier.fillMaxWidth()) {
@@ -315,14 +322,14 @@ import androidx.compose.material.icons.filled.Link
                                             color = PocketOrange,
                                         )
                                     }
-                                } else if (index != DevStack.entries.lastIndex) {
+                                } else if (index != stacks.lastIndex) {
                                     HorizontalDivider(
                                         modifier = Modifier.padding(top = 11.dp),
                                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                                     )
                                 }
                             }
-                            if (!installing && index != DevStack.entries.lastIndex) {
+                            if (!installing && index != stacks.lastIndex) {
                                 Spacer(Modifier.height(11.dp))
                             }
                         }

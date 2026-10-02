@@ -14,7 +14,7 @@ val testSecrets = Properties().apply {
 val playBuild = providers.gradleProperty("playBuild").orNull?.toBoolean() == true ||
     providers.gradleProperty("playFeasibility").orNull?.toBoolean() == true
 val privacyPolicyUrl = providers.gradleProperty("privacyPolicyUrl").orNull
-    ?: "https://github.com/techjarves/Mobile-Harness/blob/main/PRIVACY.md"
+    ?: "https://github.com/elias-veyne/AGENTIC/blob/main/PRIVACY.md"
 val uploadStorePath = providers.environmentVariable("MH_UPLOAD_STORE_FILE").orNull
 val uploadStorePassword = providers.environmentVariable("MH_UPLOAD_STORE_PASSWORD").orNull
 val uploadKeyAlias = providers.environmentVariable("MH_UPLOAD_KEY_ALIAS").orNull
@@ -26,9 +26,9 @@ val hasUploadSigning = listOf(
     uploadKeyPassword,
 ).all { !it.isNullOrBlank() }
 val runtimeReleaseBaseUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4"
+    "https://github.com/elias-veyne/AGENTIC/releases/download/runtime-2026.09.4"
 val appUpdateManifestUrl =
-    "https://github.com/techjarves/Mobile-Harness/releases/latest/download/mobile-harness-update.json"
+    "https://github.com/elias-veyne/AGENTIC/releases/latest/download/agentic-update.json"
 val runtimeBundleDir = rootProject.layout.projectDirectory.dir("dist/runtime-bundles")
 val generatedRuntimeAssets = layout.buildDirectory.dir("generated/runtime-assets")
 
@@ -176,7 +176,7 @@ tasks.matching { it.name.contains("Offline") && it.name.contains("lint", ignoreC
 
 tasks.register("playReadinessCheck") {
     group = "verification"
-    description = "Checks configuration required before uploading a Mobile Harness Play bundle."
+    description = "Checks configuration required before uploading an Agentic Play bundle."
     doLast {
         check(playBuild) { "Run with -PplayBuild=true." }
         check(privacyPolicyUrl.startsWith("https://")) {

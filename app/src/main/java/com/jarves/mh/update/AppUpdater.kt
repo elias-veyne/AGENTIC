@@ -65,8 +65,8 @@ class AppUpdater(
 
     fun download(info: AppUpdateInfo, progress: (Long, Long) -> Unit): File {
         val directory = File(context.filesDir, "updates").also { it.mkdirs() }
-        val partial = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk.part")
-        val target = File(directory, "mobile-harness-${BuildConfig.APP_VARIANT}.apk")
+        val partial = File(directory, "agentic-${BuildConfig.APP_VARIANT}.apk.part")
+        val target = File(directory, "agentic-${BuildConfig.APP_VARIANT}.apk")
         val connection = URL(info.apkUrl).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 15_000

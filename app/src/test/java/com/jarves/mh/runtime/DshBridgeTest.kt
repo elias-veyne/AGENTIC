@@ -5,6 +5,7 @@ import com.jarves.mh.model.DEEPSEEK_HARNESS_PROVIDERS
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.model.ProviderProtocol
+import com.jarves.mh.model.dshApiForZenModel
 import com.jarves.mh.model.inferredDshApiForUrl
 import com.jarves.mh.model.providerProtocolForAgent
 import com.jarves.mh.model.providersForAgent
@@ -149,11 +150,56 @@ class DshRouteMapperTest {
     }
 
     @Test
-    fun zenUsesFixedUrlAndResponsesProtocol() {
-        val route = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN))
-        assertEquals("opencode-zen", route.name)
-        assertEquals("openai-responses", route.custom?.api)
+    fun zenResolvesProtocolAndBaseUrlPerModelFamily() {
+        // Zen serves each model family on its own wire endpoint; the route now
+        // derives both the protocol and the base URL from the chosen model.
+        val deepseek = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN, model = "deepseek-v4-flash"))
+        assertEquals("openai-completions", deepseek.custom?.api)
+        assertEquals("https://opencode.ai/zen/v1", deepseek.custom?.baseUrl)
+
+        val claude = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN, model = "claude-sonnet-4-6"))
+        assertEquals("anthropic-messages", claude.custom?.api)
+        // The Anthropic SDK appends /v1/messages, so this family roots at /zen.
+        assertEquals("https://opencode.ai/zen", claude.custom?.baseUrl)
+
+        val gpt = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN, model = "gpt-5.5"))
+        assertEquals("openai-responses", gpt.custom?.api)
+        assertEquals("https://opencode.ai/zen/v1", gpt.custom?.baseUrl)
+
+        val gemini = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN, model = "gemini-3-flash"))
+        assertEquals("google-generative-ai", gemini.custom?.api)
+        assertEquals("https://opencode.ai/zen/v1", gemini.custom?.baseUrl)
+    }
+
+    @Test
+    fun zenBlankModelFallsBackToItsDefaultFamily() {
+        val route = DshRouteMapper.forProfile(ProviderProfile(ProviderKind.OPENCODE_ZEN, model = ""))
+        assertEquals("deepseek-v4-flash", route.defaultModel)
+        assertEquals("openai-completions", route.custom?.api)
         assertEquals("https://opencode.ai/zen/v1", route.custom?.baseUrl)
+    }
+
+    @Test
+    fun zenProtocolResolutionMatchesTheLiveEndpointTable() {
+        // Verified 1 Oct 2026 against https://opencode.ai/docs/zen/.
+        assertEquals("openai-responses", dshApiForZenModel("gpt-5.5"))
+        assertEquals("openai-responses", dshApiForZenModel("grok-4.7"))
+        assertEquals("openai-responses", dshApiForZenModel("muse-spark-1.3"))
+        assertEquals("anthropic-messages", dshApiForZenModel("claude-opus-5"))
+        assertEquals("anthropic-messages", dshApiForZenModel("qwen3.6-plus"))
+        assertEquals("openai-completions", dshApiForZenModel("deepseek-v4-flash"))
+        assertEquals("openai-completions", dshApiForZenModel("kimi-k2.6"))
+        assertEquals("openai-completions", dshApiForZenModel("glm-5.3"))
+        assertEquals("openai-completions", dshApiForZenModel("qwen3.8-max"))
+        assertEquals("google-generative-ai", dshApiForZenModel("gemini-3.8-flash"))
+        // Unknown families land on the openai-compatible endpoint.
+        assertEquals("openai-completions", dshApiForZenModel("future-model-9"))
+    }
+
+    @Test
+    fun storedDshApiCannotOverrideZenPerModelResolution() {
+        val profile = ProviderProfile(ProviderKind.OPENCODE_ZEN, model = "claude-sonnet-4-6", dshApi = "openai-responses")
+        assertEquals("anthropic-messages", DshRouteMapper.forProfile(profile).custom?.api)
     }
 
     @Test

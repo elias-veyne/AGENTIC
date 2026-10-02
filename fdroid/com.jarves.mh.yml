@@ -3,14 +3,14 @@ Categories:
   - System
 License: MIT
 AuthorName: TechJarves
-SourceCode: https://github.com/techjarves/Mobile-Harness
-IssueTracker: https://github.com/techjarves/Mobile-Harness/issues
-Changelog: https://github.com/techjarves/Mobile-Harness/releases
+SourceCode: https://github.com/elias-veyne/AGENTIC
+IssueTracker: https://github.com/elias-veyne/AGENTIC/issues
+Changelog: https://github.com/elias-veyne/AGENTIC/releases
 
-AutoName: Mobile Harness
+AutoName: Agentic
 
 RepoType: git
-Repo: https://github.com/techjarves/Mobile-Harness.git
+Repo: https://github.com/elias-veyne/AGENTIC.git
 
 AntiFeatures:
   - NonFreeNet

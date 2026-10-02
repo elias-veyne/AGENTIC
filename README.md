@@ -47,7 +47,8 @@
     <td width="50%" valign="top" align="center">
       <h3>Online Edition</h3>
       <p><strong>87.4 MB · Recommended</strong></p>
-      <p>Start with the smaller APK. Core, Python, and Android runtime bundles are downloaded only when needed.</p>
+      <p>Start with the smaller APK. Core and Python runtime bundles are downloaded only when needed.</p>
+      <p><sub>The Android toolchain is not downloaded in this edition — commit and let your repo's CI build and sign the APK instead. It ships in the Offline Edition below.</sub></p>
       <a href="https://github.com/elias-veyne/AGENTIC/releases/latest">
         <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
       </a>
@@ -316,9 +317,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Agentic allows downloading optional developer packs on demand to conserve space:
 
 * **Python Suite**: Python 3.10+, pip, virtualenv, and essential scientific C-extensions.
-* **Android & JVM**: OpenJDK 17 headless runtime and Gradle build tools.
+* **Android & JVM**: OpenJDK 17 headless runtime and Gradle build tools. *(Offline Edition only — see below.)*
 * **C / C++ Compiler Suite**: GCC/G++, Clang, Make, and CMake for native tool compilation.
 * **PHP Development**: PHP CLI runtime, Composer, and standard database extensions.
+
+> **Android toolchain, online vs. offline:** the toolchain is roughly 570 MB, so the **Online Edition** does not download it — the agent edits Android projects and a GitHub Actions workflow builds and signs the APK on CI, which you then install. The **Offline Edition** bundles the full toolchain (JDK 17, Android SDK 36, Build Tools 35, Gradle 8.14.3, offline Maven cache) for true on-device `gradle` builds when you want them.
 
 > *Note: Kernel-level virtualization technologies such as Docker, KVM, systemd services, and nested hardware emulators are not supported under PRoot.*
 
