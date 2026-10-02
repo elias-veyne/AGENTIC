@@ -11,6 +11,7 @@ import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.model.RuntimeEvent
 import com.jarves.mh.model.ToolRequest
+import com.jarves.mh.model.dshApiForProfile
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.UUID
@@ -351,7 +352,7 @@ class DshRuntimeBridge(
                 is DshSdkProtocolEvent.Status -> {
                     if (protocolEvent.running) {
                         sawRunning = true
-                        pushForegroundProgress("DeepSeek Harness is working…")
+                        pushForegroundProgress(sessionId, "DeepSeek Harness is working…")
                     } else if (sawRunning && !shutdownSent) {
                         completed = sawActivity && failure.isBlank()
                         if (!completed && failure.isBlank()) {
@@ -577,7 +578,7 @@ class DshRuntimeBridge(
                     isFinal = isFinal,
                 ),
             )
-            pushForegroundProgress("Thinking…")
+            pushForegroundProgress(sessionId, "Thinking…")
         }
     }
 
