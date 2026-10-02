@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="assets/readme/logo.svg" alt="Agentic Logo" width="104" height="104" style="border-radius: 24px;" />
+  <img src="assets/readme/icon.png" alt="Agentic" width="120" height="120" />
 
   # Agentic
 
@@ -38,31 +38,15 @@
 ## Download Agentic
 
 <div align="center">
-  <h3>Choose the edition that fits your setup</h3>
-  <p>Both editions contain the complete Agentic app and support secure in-app updates.</p>
+  <h3>One edition, always current</h3>
+  <p>Agentic ships as a single online build. Core and Python runtime bundles are downloaded only when needed, and every release is signed and delivered through secure in-app updates.</p>
+  <a href="https://github.com/elias-veyne/AGENTIC/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Latest_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Agentic APK" />
+  </a>
 </div>
 
-<table>
-  <tr>
-    <td width="50%" valign="top" align="center">
-      <h3>Online Edition</h3>
-      <p><strong>87.4 MB · Recommended</strong></p>
-      <p>Start with the smaller APK. Core and Python runtime bundles are downloaded only when needed.</p>
-      <p><sub>The Android toolchain is not downloaded in this edition — commit and let your repo's CI build and sign the APK instead. It ships in the Offline Edition below.</sub></p>
-      <a href="https://github.com/elias-veyne/AGENTIC/releases/latest">
-        <img src="https://img.shields.io/badge/Download-Online_APK-F28C52?style=for-the-badge&logo=android&logoColor=white" alt="Download Online APK" />
-      </a>
-    </td>
-    <td width="50%" valign="top" align="center">
-      <h3>Offline Edition</h3>
-      <p><strong>887.7 MB · Everything included</strong></p>
-      <p>Includes the Core, Python, and Android runtime bundles for setup with limited or unavailable internet.</p>
-      <a href="https://github.com/elias-veyne/AGENTIC/releases/latest">
-        <img src="https://img.shields.io/badge/Download-Offline_APK-5B8DEF?style=for-the-badge&logo=android&logoColor=white" alt="Download Offline APK" />
-      </a>
-    </td>
-  </tr>
-</table>
+> [!NOTE]
+> **No on-device Android toolchain.** The Android SDK, JDK, and Gradle add roughly 570 MB and are redundant on a phone — the agent edits Android projects here and a GitHub Actions workflow builds and signs the APK on CI, which you then install as an in-app update. Android builds on-device are still available to anyone compiling the offline flavor from source.
 
 <p align="center">
   <strong>ARM64 Android 9+</strong><br />
@@ -118,12 +102,12 @@ Agentic unites modern **Jetpack Compose UI** with a self-contained **Ubuntu 20.0
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>On-device Android Builds</h3>
-      <p>Build, install, and launch Android APKs directly on the phone. Ships in the <strong>Offline Edition</strong>; online users commit and let CI build and sign instead.</p>
+      <h3>CI Android Builds</h3>
+      <p>Build and sign Android APKs through your repo's GitHub Actions. The agent edits on-device and installs the signed update straight from CI.</p>
     </td>
     <td width="50%" valign="top">
       <h3>Optional Toolchains</h3>
-      <p>Add Python, C/C++, and PHP tooling only when a project needs it. Android is bundled in the Offline Edition.</p>
+      <p>Add Python, C/C++, and PHP tooling only when a project needs it — downloaded on demand, never bundled up front.</p>
     </td>
   </tr>
 </table>
@@ -145,29 +129,9 @@ Minimum OS Level    : Android 9.0 (API 28)
 ### 2. Guided Bootstrap (~10 Minutes)
 Launch the application and follow the interactive setup wizard:
 
-<table>
-  <tr>
-    <th width="33%" align="center">1 · System Readiness</th>
-    <th width="33%" align="center">2 · Toolchains</th>
-    <th width="33%" align="center">3 · AI Provider</th>
-  </tr>
-  <tr>
-    <td align="center" valign="top">
-      <img src="assets/readme/setup-notifications.png" alt="System compatibility check" width="100%" />
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/readme/setup-toolchains.png" alt="Toolchain selection" width="100%" />
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/readme/setup-provider.png" alt="Provider connection" width="100%" />
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Verifies device storage, CPU architecture, and background service permissions.</sub></td>
-    <td align="center"><sub>Select core Ubuntu runtime and optional development stacks.</sub></td>
-    <td align="center"><sub>Securely store your API keys in Android Keystore.</sub></td>
-  </tr>
-</table>
+1. **System Readiness** — verifies device storage, CPU architecture, and background service permissions.
+2. **Toolchains** — select the core Ubuntu runtime and any optional development stacks.
+3. **AI Provider** — securely store your API keys in Android Keystore.
 
 ### 3. Create & Build
 1. Tap **New Project** or launch an instant **Quick Project**.
@@ -203,50 +167,64 @@ Agentic uses **DeepSeek Harness** as its agent engine, with a provider-agnostic 
 
 ## Architecture
 
-Agentic bridges native Android Jetpack Compose to an isolated PRoot Linux execution layer via an optimized C++ JNI bridge:
+Agentic bridges native Android Jetpack Compose to an isolated PRoot Linux execution layer via an optimized C++ JNI bridge. The whole product is one Gradle module — these are the packages that do the work:
 
-```mermaid
-flowchart TB
-    subgraph Host[" Android Native Host (Kotlin + Jetpack Compose) "]
-        UI["Modern UI Layer<br/>Projects • Chat • Terminal • Web Preview"]
-        Service["Foreground Runtime Service<br/>Process Lifecycle & WakeLocks"]
-        Keystore["Android Keystore<br/>AES-256 GCM Credentials"]
-        Bridge["C++ JNI Process Bridge<br/>Native Launcher & Pipe Multiplexer"]
-    end
-
-    subgraph Subsystem[" Private Linux Subsystem (PRoot ARM64) "]
-        Ubuntu["Ubuntu 20.04 LTS Subsystem<br/>Rootless Userspace Environment"]
-        AgentManager["Agent Manager<br/>DeepSeek Harness (DSH)"]
-        Orchestrator["Orchestrator<br/>Task Decomposition & Worker Coordination"]
-        Workers["Worker Pool<br/>Multi-Agent Mode Workers"]
-        Tools["Development Toolchains<br/>Node.js • Git • Python • C++"]
-        Workspace["Local Project Workspace<br/>Files • Git History • Checkpoints"]
-    end
-
-    subgraph Cloud[" Model Providers (per-session) "]
-        Providers["Provider Registry<br/>Anthropic • DeepSeek • OpenRouter • Kimi"]
-        Zen["OpenCode Zen / NVIDIA NIM<br/>Multi-family Gateways"]
-        Gateways["Custom API Endpoints"]
-    end
-
-    UI <--> Service
-    Service <--> Bridge
-    Bridge <--> Subsystem
-    Keystore -.-> UI
-    AgentManager <--> Cloud
-    Orchestrator <--> Workers
-    Agents --> Tools
-    Tools <--> Workspace
-    UI -.-> Workspace
-
-    classDef hostStyle fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
-    classDef subStyle fill:#1e1b4b,stroke:#818cf8,stroke-width:1.5px,color:#f8fafc;
-    classDef cloudStyle fill:#18181b,stroke:#f59e0b,stroke-width:1.5px,color:#f8fafc;
-
-    class UI,Service,Keystore,Bridge hostStyle;
-    class Ubuntu,AgentManager,Orchestrator,Workers,Tools,Workspace subStyle;
-    class Providers,Zen,Gateways cloudStyle;
+```text
+app/src/main/
+├── java/com/jarves/mh/
+│   ├── agent/                   # ← Multi-agent orchestration engine
+│   │   ├── AgentSystem.kt       #   System entry point & mode (single vs multi)
+│   │   ├── Orchestrator.kt      #   Task decomposition, worker assignment, aggregation
+│   │   ├── Decomposer.kt        #   Splits a task into concurrent shards
+│   │   ├── HeartbeatMonitor.kt  #   30s worker liveness & automatic recovery
+│   │   ├── MessageBus.kt        #   Inter-worker message dispatch
+│   │   ├── SharedStateStore.kt  #   Cross-worker scratch state
+│   │   └── CooperativeSession.kt#   Peer-to-peer agent sessions (agent2/agent3)
+│   ├── data/                    # Encrypted persistence layer
+│   │   ├── ApiKeyVault.kt       #   Android Keystore AES-256-GCM credential vault
+│   │   ├── AppPreferences.kt    #   DataStore-backed settings & per-chat model bindings
+│   │   └── ModelRegistry.kt     #   Connected models: label, base URL, model id, key
+│   ├── model/
+│   │   └── Models.kt            #   Provider/model entities, Zen per-family protocol map
+│   ├── network/
+│   │   ├── GitHubClient.kt      #   Device-flow OAuth, repo & PR operations
+│   │   └── ProviderApiClient.kt #   Provider-side model discovery
+│   ├── integrations/
+│   │   └── GitHubService.kt     #   Encrypted PAT storage & GitHub REST calls
+│   ├── update/
+│   │   └── AppUpdater.kt        #   Signed in-app update download & install
+│   ├── runtime/                 # ← The Linux subsystem + agent engine
+│   │   ├── DshRuntimeBridge.kt  #   DeepSeek Harness JSON-RPC, per-session DSH_HOME & state
+│   │   ├── RuntimeInstaller.kt  #   PRoot rootfs provisioning, bundle download & checksums
+│   │   ├── RuntimeBridge.kt     #   Shared process/workspace surface
+│   │   ├── NativeSpawnProcess.kt#   C++ JNI process launcher & pipe multiplexer
+│   │   ├── AgentDriver.kt       #   Per-agent install drivers (DeepSeek SDK profile)
+│   │   ├── RuntimeExecutionService.kt   # Foreground service: lifecycle & wakelocks
+│   │   ├── RuntimeSetupService.kt       # First-run bootstrap & bundle staging
+│   │   ├── WorkspaceCheckpoints.kt      # Project snapshots with undo
+│   │   ├── AndroidAppInstaller.kt       # APK build-output install via package installer
+│   │   └── LocalFormatGateway.kt        # Live web preview gateway
+│   └── ui/                      # Jetpack Compose (Material 3)
+│       ├── PocketDevApp.kt      #   Nav host & download/toolchain surface
+│       ├── MainViewModel.kt     #   Session lifecycle, concurrent shards, model resolution
+│       ├── AgentScreen.kt       #   Chat + tool-call rendering
+│       ├── TerminalScreen.kt    #   Terminal over the process bridge
+│       ├── GitHubScreen.kt      #   OAuth & repo browser
+│       ├── SettingsScreen.kt    #   Providers, PAT credential pipeline, stacks
+│       ├── ModelManagerSheet.kt #   Add/switch models per chat
+│       ├── chat/                #   Chat mode content, smooth follow-scroll
+│       ├── onboarding/          #   Setup wizard
+│       ├── orbs/                #   Live wallpaper pet engine
+│       └── theme/               #   Glassmorphism theme
+├── cpp/                         # ← Native layer (CMake, NDK)
+│   ├── pocket_launcher.c        #   Rootfs pivot & PRoot entry
+│   ├── pocket_spawn.c           #   PTY-style process spawn & I/O multiplexing
+│   └── executable_carrier.c     #   ELF carrier so AGP packages the launcher .so
+├── assets/                      #   Rootfs checksums, licenses, base config
+└── res/                         #   Adaptive icons, notification glyph, drawables
 ```
+
+**Request path, end to end:** a chat resolves its bound `(provider, model, key)` from `ModelRegistry` → `MainViewModel` injects the key per-process as an env var and writes a **per-session** `DSH_HOME` so concurrent sessions never share one `settings.yaml` → `DshRuntimeBridge` speaks newline-delimited JSON-RPC to `dsh` over the C++ pipe bridge → the orchestrator fans concurrent shards out to workers that heartbeat every 30s → tool output streams back and is rendered in Compose.
 
 ### Core Runtime Components
 * **Base Environment**: Ubuntu 20.04 ARM64 verified rootfs
@@ -325,35 +303,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Agentic allows downloading optional developer packs on demand to conserve space:
 
 * **Python Suite**: Python 3.10+, pip, virtualenv, and essential scientific C-extensions.
-* **Android & JVM**: OpenJDK 17 headless runtime and Gradle build tools. *(Offline Edition only — see below.)*
 * **C / C++ Compiler Suite**: GCC/G++, Clang, Make, and CMake for native tool compilation.
 * **PHP Development**: PHP CLI runtime, Composer, and standard database extensions.
 
-> **Android toolchain, online vs. offline:** the toolchain is roughly 570 MB, so the **Online Edition** does not download it — the agent edits Android projects and a GitHub Actions workflow builds and signs the APK on CI, which you then install. The **Offline Edition** bundles the full toolchain (JDK 17, Android SDK 36, Build Tools 35, Gradle 8.14.3, offline Maven cache) for true on-device `gradle` builds when you want them.
+> **Why no Android toolchain?** The Android SDK, JDK, and Gradle add roughly 570 MB and are redundant on a phone — this repo's own GitHub Actions workflow builds and signs the APK on CI, and the app installs the result as an in-app update. Anyone who genuinely needs on-device `gradle` builds can still compile the `offline` product flavor from source (`./gradlew assembleOfflineRelease`), which bundles the full toolchain (JDK 17, Android SDK 36, Build Tools 35, Gradle 8.14.3, offline Maven cache).
 
 > *Note: Kernel-level virtualization technologies such as Docker, KVM, systemd services, and nested hardware emulators are not supported under PRoot.*
-
-</details>
-
-<details>
-<summary><b>Repository directory structure</b></summary>
-
-<br />
-
-```text
-AGENTIC/
-├── app/src/main/
-│   ├── java/com/jarves/mh/
-│   │   ├── data/       # Preferences, Keystore AES encryption, SQLite persistence
-│   │   ├── model/      # Data entities: Projects, Chats, Files, Task, WorkerState
-│   │   ├── runtime/    # PRoot installer, C++ agent bridge, foreground services
-│   │   └── ui/         # Jetpack Compose screens, Material 3 theme, ViewModels
-│   ├── cpp/            # Native C++ launcher, pseudo-terminal pipe handler
-│   ├── assets/         # Verified rootfs checksums, licenses, base configuration
-│   └── res/            # Android icons, XML drawables, vector assets
-├── fastlane/           # Play Store metadata, graphics, and release automation
-└── docs/               # In-depth architectural notes & Play Store review guides
-```
 
 </details>
 
