@@ -3,6 +3,20 @@ name: Build and test
 on:
   push:
     branches: [ main ]
+    # Docs- and metadata-only pushes must not trigger a build: every main
+    # build publishes a Release and bumps versionCode (commit count), so a
+    # README or store-graphic change would otherwise push a byte-identical
+    # "update" to every user's in-app updater. If any code path changes this
+    # filter is bypassed and the build runs as normal.
+    paths-ignore:
+      - 'README.md'
+      - 'PRIVACY.md'
+      - 'LICENSE'
+      - '**/*.md'
+      - 'docs/**'
+      - 'assets/**'
+      - 'fastlane/**'
+      - '.github/**'
   pull_request:
     branches: [ main ]
   workflow_dispatch:

@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
   <!--
-      Agentic mark: the orb.
+      Agentic mark: the orb. Source asset for the Fastlane store icon.
 
       Follows the launcher foreground (a dark glossy orb on a dark tile) and
       shares the geometry of the notification silhouette: a bold ring (the
       orb) with a centered dot (the sheen). Drawn in the Agentic accent
-      (#F28C52) so the mark stays visible against the dark README surface.
+      (#F28C52) so the mark stays visible against the dark tile.
   -->
   <rect width="108" height="108" fill="#0B0E14"/>
   <circle cx="54" cy="54" r="29" fill="none" stroke="#F28C52" stroke-width="10"/>

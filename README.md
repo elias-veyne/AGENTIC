@@ -119,11 +119,11 @@ Agentic unites modern **Jetpack Compose UI** with a self-contained **Ubuntu 20.0
   <tr>
     <td width="50%" valign="top">
       <h3>On-device Android Builds</h3>
-      <p>Build, install, and launch Android APKs directly on the phone without USB or wireless ADB pairing.</p>
+      <p>Build, install, and launch Android APKs directly on the phone. Ships in the <strong>Offline Edition</strong>; online users commit and let CI build and sign instead.</p>
     </td>
     <td width="50%" valign="top">
       <h3>Optional Toolchains</h3>
-      <p>Add Python, Android, C/C++, and PHP tooling only when a project needs it.</p>
+      <p>Add Python, C/C++, and PHP tooling only when a project needs it. Android is bundled in the Offline Edition.</p>
     </td>
   </tr>
 </table>
@@ -179,13 +179,20 @@ Launch the application and follow the interactive setup wizard:
 
 ## Agent Configuration
 
-Agentic uses **DeepSeek Harness** as its primary coding agent, with a flexible provider-agnostic architecture that supports multiple API endpoints:
+Agentic uses **DeepSeek Harness** as its agent engine, with a provider-agnostic routing layer that speaks each provider's native wire protocol. Every provider is available in every session, and each chat picks its own model:
 
-| Provider | Integration Type | Streaming | Tool Calling | Status | Notes |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **DeepSeek API** | Direct Key | Supported | Supported | `Recommended` | Primary supported backend |
-| **OpenRouter** | Gateway | Supported | Supported | `Supported` | Routes compatible models through one API key |
-| **Custom API** | Endpoint Override | Compatible | Compatible | `Experimental` | User-configured gateway |
+| Provider | Protocol | Streaming | Tool Calling | Status | Notes |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **Anthropic** | Anthropic Messages | Supported | Supported | `Recommended` | Native `claude-sonnet-4-6` support |
+| **DeepSeek** | Anthropic-compatible | Supported | Supported | `Recommended` | `deepseek-v4-flash` / `deepseek-v4-pro` |
+| **OpenRouter** | OpenRouter Gateway | Supported | Supported | `Supported` | Routes compatible models through one API key |
+| **Kimi** | Anthropic-compatible | Supported | Supported | `Supported` | Moonshot `kimi-k2.6` |
+| **OpenCode Zen** | Per-model family | Supported | Supported | `Supported` | GPT, Claude, DeepSeek, Qwen, GLM, Gemini via one gateway |
+| **NVIDIA NIM** | OpenAI-compatible | Supported | Supported | `Supported` | Self-hosted NIM endpoints |
+| **Custom API** | Anthropic-compatible | Compatible | Compatible | `Experimental` | User-configured endpoint |
+
+> [!NOTE]
+> OpenCode Zen serves different model families on **different wire endpoints** — GPT models use `/responses`, Claude uses `/messages`, DeepSeek/Qwen/GLM/Kimi use `/chat/completions`, and Gemini uses `/models/<id>`. Agentic resolves the endpoint from the model family rather than assuming one protocol for the whole provider.
 
 **Multiple models at once.** You are not limited to one provider per session. The model registry stores every model you connect as an independent entry — its own label, base URL, model id, and API key — so you can add your first DeepSeek model, then use **Add new model** to connect an OpenRouter or custom-endpoint model alongside it. Each chat picks its model from this list, and the home screen's **Total Agents** card shows how many models are connected while **Active Agents** shows how many are actively working.
 
@@ -216,8 +223,9 @@ flowchart TB
         Workspace["Local Project Workspace<br/>Files • Git History • Checkpoints"]
     end
 
-    subgraph Cloud[" Model Providers "]
-        DeepSeek["DeepSeek API / OpenRouter"]
+    subgraph Cloud[" Model Providers (per-session) "]
+        Providers["Provider Registry<br/>Anthropic • DeepSeek • OpenRouter • Kimi"]
+        Zen["OpenCode Zen / NVIDIA NIM<br/>Multi-family Gateways"]
         Gateways["Custom API Endpoints"]
     end
 
@@ -237,7 +245,7 @@ flowchart TB
 
     class UI,Service,Keystore,Bridge hostStyle;
     class Ubuntu,AgentManager,Orchestrator,Workers,Tools,Workspace subStyle;
-    class DeepSeek,Gateways cloudStyle;
+    class Providers,Zen,Gateways cloudStyle;
 ```
 
 ### Core Runtime Components
