@@ -5,9 +5,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.jarves.mh.MainActivity
 import com.jarves.mh.R
 import java.util.concurrent.ConcurrentHashMap
@@ -92,9 +94,16 @@ class RuntimeExecutionService : Service() {
             }
             else -> {
                 sessionId?.let { sessionProjects[it] = projectName }
-                startForeground(
+                // Pass the foreground service type explicitly rather than relying solely
+                // on the manifest declaration: on API 34+ the platform requires a
+                // specialUse type for this category of work, and making it explicit at the
+                // call site removes any ambiguity in how the type is resolved. Below API 29
+                // ServiceCompat delegates to the plain 2-arg startForeground.
+                ServiceCompat.startForeground(
+                    this,
                     RUNNING_NOTIFICATION_ID,
                     runningNotification("The agent is working in $projectName", includeStop = canStop),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
                 )
                 acquireWakeLock()
             }

@@ -1,6 +1,7 @@
 package com.jarves.mh.agent
 
 import com.jarves.mh.agent.SharedStateStore.TaskState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -106,6 +107,11 @@ class Orchestrator(
                                 output = executor.execute(st.instruction)
                                 succeeded = true
                                 break
+                            } catch (e: CancellationException) {
+                                // A cancellation is the parent unwinding this shard (user
+                                // stopped the run, the scope was torn down). It must not be
+                                // treated as a retryable failure — delay() would only re-raise it.
+                                throw e
                             } catch (e: Exception) {
                                 lastError = e
                                 if (attempt < config.maxTaskRetries) {
@@ -137,6 +143,10 @@ class Orchestrator(
                                 error = "Escalated: ${lastError?.message ?: "max retries $attempt exhausted"}",
                             )
                         }
+                    } catch (e: CancellationException) {
+                        // Propagate cancellation instead of reporting it as a shard
+                        // failure; otherwise stopping a workflow surfaces as an error.
+                        throw e
                     } catch (e: Exception) {
                         ShardResult(
                             subtaskId = st.subtaskId,

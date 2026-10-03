@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -52,10 +54,12 @@ class DshRuntimeBridge(
     @Volatile private var githubToken: String? = null
 
     fun updateGithubToken(token: String?) {
-        githubToken = token?.takeIf { it.isNotBlank() }
-        // The view model calls this on the main thread; the write is small but
-        // touches disk, so it goes to IO rather than risking an ANR.
-        credentialScope.launch { writeGithubCredential(githubToken) }
+        val normalized = token?.takeIf { it.isNotBlank() }
+        githubToken = normalized
+        // Non-blocking: a conflated channel always keeps the most recent value. The
+        // single consumer drains it in order, so a rapid paste-then-clear cannot
+        // leave the cleared token on disk the way unordered IO launches could.
+        credentialWrites.trySend(normalized)
     }
 
     /**
@@ -129,8 +133,25 @@ class DshRuntimeBridge(
     /** Off-main-thread home for [writeGithubCredential]; a failing write must
      *  never cancel an in-flight credential update. */
     private val credentialScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    /**
+     * Serial, latest-value-wins sink for credential updates. Plain launches onto
+     * [Dispatchers.IO] carry no ordering guarantee, so a rapid paste-then-clear could
+     * persist the token the user had just removed. A conflated channel drained by a
+     * single consumer applies updates in order and always ends on the most recent one.
+     */
+    private val credentialWrites = Channel<String?>(Channel.CONFLATED)
+
+    init {
+        credentialScope.launch { credentialWrites.consumeEach { token -> writeGithubCredential(token) } }
+    }
     private val checkpoints = WorkspaceCheckpoints(context.filesDir)
-    private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 64)
+    // SUSPEND (the default overflow policy) is deliberate: this bus carries terminal
+    // lifecycle events and streaming AssistantDeltas, and the UI accumulates reply text
+    // from those deltas, so a dropped event would lose text or leave the chat stuck in
+    // its running state. The reader loop emits from Dispatchers.IO while the sole
+    // collector runs on Main, so a slow frame can otherwise suspend the reader and stall
+    // the agent. A generous buffer absorbs Main-thread pauses without dropping anything.
+    private val eventBus = MutableSharedFlow<RuntimeEvent>(extraBufferCapacity = 512)
     override val events: Flow<RuntimeEvent> = eventBus
     private val finishedSessions = ConcurrentHashMap.newKeySet<String>()
 
@@ -263,18 +284,16 @@ class DshRuntimeBridge(
                 error(sdkResult.failure.ifBlank { "DeepSeek Harness stopped with exit code $exit" })
             }
         }.onFailure { error ->
-            Log.e("DshBridge", "Session failed", error)
-            val message = friendlyError(error)
-            emitFailureOnce(sessionId, message)
             if (state.userStopRequested) {
-                cancelForegroundRuntime(sessionId)
+                // A deliberate stop is reported as a stop, never as a failure. The old
+                // path emitted SessionFailed("Stopped by user") and relied on the
+                // ViewModel's substring filters to keep it from looking like a key rejection.
+                Log.d("DshBridge", "Session stopped by user")
+                emitStoppedOnce(sessionId)
             } else {
-                finishForegroundRuntime(
-                    sessionId = sessionId,
-                    completed = false,
-                    projectName = projectSlug,
-                    detail = message,
-                )
+                Log.e("DshBridge", "Session failed", error)
+                val message = friendlyError(error)
+                emitFailureOnce(sessionId, message)
             }
         }
         // The dsh process has exited by now, so its per-session home is dead config.
@@ -297,7 +316,12 @@ class DshRuntimeBridge(
         val writer = process.outputStream.bufferedWriter()
         val parser = DshSdkProtocolParser(sessionId)
         var outputOffset = 0L
-        val pendingOutput = StringBuilder()
+        // The protocol is newline-framed UTF-8, so incomplete reads must be buffered at
+        // the BYTE level and only decoded up to the last complete newline. Decoding each
+        // 16 KB chunk independently would split a multibyte sequence at the read boundary
+        // and decodeToString() would replace the orphaned continuation bytes with U+FFFD,
+        // corrupting the entire line and silently dropping a protocol message.
+        val pendingBytes = java.io.ByteArrayOutputStream()
         var promptSent = false
         var sawRunning = false
         var completed = false
@@ -360,7 +384,11 @@ class DshRuntimeBridge(
                         }
                         shutdownSent = true
                         shutdownSentAt = android.os.SystemClock.elapsedRealtime()
-                        send("shutdown", SDK_SHUTDOWN_ID)
+                        // Only a live process can acknowledge a shutdown frame. The final
+                        // flush after process death can still deliver the harness's last
+                        // status line; writing to a dead pipe would throw IOException out
+                        // of runSdkSession and flip a completed session to failed.
+                        if (process.isAlive) send("shutdown", SDK_SHUTDOWN_ID)
                     }
                 }
                 is DshSdkProtocolEvent.Reasoning -> {
@@ -418,16 +446,26 @@ class DshRuntimeBridge(
             }
             if (count <= 0) continue
             outputOffset += count
-            pendingOutput.append(bytes.decodeToString(0, count))
-            var newline = pendingOutput.indexOf("\n")
+            pendingBytes.write(bytes, 0, count)
+
+            // Decode only the fully-received lines, keeping any partial trailing bytes.
+            // A '\n' (0x0A) is a single-byte ASCII character and can never appear inside
+            // a UTF-8 multibyte sequence, so splitting on the last newline always lands
+            // on a sequence boundary.
+            val buffer = pendingBytes.toByteArray()
+            val lastNewline = buffer.indexOfLast { it == NEWLINE_BYTE }
+            if (lastNewline < 0) continue
+            val text = buffer.decodeToString(0, lastNewline + 1)
+            pendingBytes.reset()
+            pendingBytes.write(buffer, lastNewline + 1, buffer.size - lastNewline - 1)
+            var newline = text.indexOf("\n")
             while (newline >= 0) {
-                val line = pendingOutput.substring(0, newline).trimEnd('\r')
-                pendingOutput.delete(0, newline + 1)
+                val line = text.substring(0, newline).trimEnd('\r')
                 if (line.isNotBlank()) handle(parser.parseLine(line))
-                newline = pendingOutput.indexOf("\n")
+                newline = text.indexOf("\n", newline + 1)
             }
         }
-        pendingOutput.toString().trim().takeIf(String::isNotBlank)?.let {
+        pendingBytes.toByteArray().decodeToString().trim().takeIf(String::isNotBlank)?.let {
             handle(parser.parseLine(it))
         }
         closeInput()
@@ -444,7 +482,10 @@ class DshRuntimeBridge(
         state.process?.destroy()
         delay(500)
         if (state.process?.isAlive == true) state.process?.destroyForcibly()
-        emitFailureOnce(sessionId, "Stopped by user")
+        // A successful, user-initiated stop is a first-class terminal state — not a
+        // failure. Emitting SessionStopped here keeps the ViewModel from having to
+        // pattern-match on the message prose to decide how to react.
+        emitStoppedOnce(sessionId)
     }
 
     override suspend fun stopActiveSession() {
@@ -597,17 +638,25 @@ class DshRuntimeBridge(
     private suspend fun emitFailureOnce(sessionId: String, reason: String) {
         if (finishedSessions.add(sessionId)) {
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, reason))
-            val state = sessions[sessionId]
-            if (state?.userStopRequested == true) {
-                cancelForegroundRuntime(sessionId)
-            } else {
-                finishForegroundRuntime(
-                    sessionId = sessionId,
-                    completed = false,
-                    projectName = state?.projectSlug ?: "your project",
-                    detail = reason,
-                )
-            }
+            finishForegroundRuntime(
+                sessionId = sessionId,
+                completed = false,
+                projectName = sessions[sessionId]?.projectSlug ?: "your project",
+                detail = reason,
+            )
+        }
+    }
+
+    /**
+     * Terminal state for a deliberate stop. Distinct from [emitFailureOnce] so a stop is
+     * never reported through the failure channel (see [RuntimeEvent.SessionStopped]).
+     * [finishedSessions] is shared with [emitFailureOnce] and [emitCompletedOnce], so a
+     * stop and a natural completion can never both fire for one session.
+     */
+    private suspend fun emitStoppedOnce(sessionId: String) {
+        if (finishedSessions.add(sessionId)) {
+            eventBus.emit(RuntimeEvent.SessionStopped(sessionId))
+            cancelForegroundRuntime(sessionId)
         }
     }
 
@@ -621,9 +670,11 @@ class DshRuntimeBridge(
                 message.contains("expired", true) ||
                 message.contains("quota", true) ||
                 message.contains("rate limit", true) ||
-                listOf("401", "403", "429").any { code ->
-                    message.contains(code) && (message.contains("auth", true) || message.contains("HTTP", true))
-                } ->
+                // Word-bounded so a bare status-code substring inside unrelated output
+                // — "port 4010", "line 401 of build.gradle" — cannot be misread as an
+                // auth rejection and trigger an unnecessary key rotation.
+                (HTTP_STATUS_CODE.containsMatchIn(message) &&
+                    (message.contains("auth", true) || message.contains("HTTP", true))) ->
                 "The provider rejected the saved API key."
             message.contains("missing_credential", true) ->
                 "No API key reached DeepSeek Harness. Re-save the provider key in Settings."
@@ -636,10 +687,17 @@ class DshRuntimeBridge(
     private fun buildContextPrompt(currentPrompt: String, history: List<ChatMessage>, guestWorkspacePath: String, projectKind: ProjectKind): String {
         val priorMessages = history
             .filter { msg ->
-                (msg.fromUser || !msg.text.startsWith("Hi! Tell me")) &&
-                !msg.text.startsWith("Failed to") &&
-                !msg.text.startsWith("Error:") &&
-                !msg.text.contains("API Error")
+                // The error-banner filters strip generated text (assistant error banners
+                // and the demo prompt). They must never apply to the user's own messages:
+                // a turn that legitimately begins with "Failed to" or "Error:" — or that
+                // quotes an "API Error" — would otherwise be dropped from the replay and
+                // the agent would lose that turn's context.
+                msg.fromUser || (
+                    !msg.text.startsWith("Hi! Tell me") &&
+                        !msg.text.startsWith("Failed to") &&
+                        !msg.text.startsWith("Error:") &&
+                        !msg.text.contains("API Error")
+                    )
             }
             .dropLast(1)
 
@@ -777,7 +835,6 @@ class DshRuntimeBridge(
     private class DshSessionException(message: String) : IllegalStateException(message)
 
     companion object {
-        const val DSH_HOME_GUEST_PATH = "/root/.dsh"
         const val FALLBACK_KEY_ENV = "MH_DSH_API_KEY"
         const val GITCONFIG_MARKER = "# managed by Agentic"
         private const val FOREGROUND_PROGRESS_MIN_INTERVAL_MS = 750L
@@ -785,6 +842,8 @@ class DshRuntimeBridge(
         private const val SDK_PROMPT_ID = 2
         private const val SDK_SHUTDOWN_ID = 3
         private const val SDK_SHUTDOWN_TIMEOUT_MS = 3_000L
+        private val NEWLINE_BYTE: Byte = 0x0A
+        private val HTTP_STATUS_CODE = Regex("\\b(?:401|403|429)\\b")
     }
 }
 

@@ -3858,6 +3858,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         currentTaskRequest = null,
                     )
                 }
+                is RuntimeEvent.SessionStopped -> {
+                    // A deliberate stop. Unlike SessionFailed this never carries an error
+                    // reason and never participates in key rotation: [retryWithNextApiKey]
+                    // only runs for SessionFailed, so a stop is final by construction.
+                    val finishedAt = System.currentTimeMillis()
+                    val finishedProjectId = owner?.projectId ?: current.activeProject?.id
+                    val running = if (finishedProjectId != null) current.runningProjectIds - finishedProjectId else current.runningProjectIds
+                    attachTaskDuration(
+                        finishWorkSegment(
+                            appendWorkItem(current, ActivityItem("Task stopped", "Stopped by user")),
+                            finishedAt,
+                        ),
+                        finishedAt,
+                    ).copy(
+                        runningProjectIds = running,
+                        isRunning = current.activeProject?.id in running,
+                        agentSessions = emptyMap(),
+                        pendingApproval = null,
+                        toastMessage = null,
+                        activity = listOf(ActivityItem("Task stopped", "Stopped by user")) + current.activity,
+                        taskFinishedAtMillis = finishedAt,
+                        currentTaskRequest = null,
+                    )
+                }
                 is RuntimeEvent.SessionFailed -> {
                     val finishedAt = System.currentTimeMillis()
                     val finishedProjectId = owner?.projectId ?: current.activeProject?.id
@@ -3885,7 +3909,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
+        if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed || event is RuntimeEvent.SessionStopped) {
             activeRuntimeRequest = null
             failedApiKeyIds.clear()
             sessionProjects.remove(event.sessionId)
@@ -3910,7 +3934,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleBackgroundEvent(event: RuntimeEvent, owner: SessionOwner) {
         val chatId = owner.chatId ?: run {
             // An orchestration shard (no owning chat): just track the running set.
-            if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
+            if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed || event is RuntimeEvent.SessionStopped) {
                 markProjectFinished(owner.projectId)
                 sessionProjects.remove(event.sessionId)
             }
@@ -3943,6 +3967,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val buffer = backgroundBuffers.remove(event.sessionId)
                 if (buffer != null) {
                     buffer.messages.add(ChatMessage(fromUser = false, text = "✗ Task stopped in background: ${event.reason}"))
+                    flushBackgroundBuffer(owner, chatId, buffer)
+                }
+                markProjectFinished(owner.projectId)
+                sessionProjects.remove(event.sessionId)
+                touchProject(owner.projectId)
+            }
+            is RuntimeEvent.SessionStopped -> {
+                val buffer = backgroundBuffers.remove(event.sessionId)
+                if (buffer != null) {
+                    buffer.messages.add(ChatMessage(fromUser = false, text = "✗ Task stopped in background"))
                     flushBackgroundBuffer(owner, chatId, buffer)
                 }
                 markProjectFinished(owner.projectId)
@@ -4115,6 +4149,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     is RuntimeEvent.SessionFailed -> {
                         if (ev.sessionId == sessionId) done.complete(output.toString())
                     }
+                    is RuntimeEvent.SessionStopped -> {
+                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                    }
                     else -> {}
                 }
             }
@@ -4167,6 +4204,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (ev.sessionId == sessionId) done.complete(output.toString())
                     }
                     is RuntimeEvent.SessionFailed -> {
+                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                    }
+                    is RuntimeEvent.SessionStopped -> {
                         if (ev.sessionId == sessionId) done.complete(output.toString())
                     }
                     else -> {}

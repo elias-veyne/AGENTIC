@@ -215,11 +215,16 @@ class WorkspaceCheckpoints(private val filesDir: File) {
 
     fun safeWorkspaceFile(root: File, relative: String): File {
         require(relative.isNotBlank() && !relative.startsWith('/')) { "Unsafe workspace path" }
-        val file = File(root, relative)
-        val rootPath = root.canonicalFile.toPath()
-        val parentPath = (file.parentFile ?: root).canonicalFile.toPath()
-        require(parentPath.startsWith(rootPath)) { "Workspace path escapes project" }
-        return file
+        // Bounds-check the file itself, not just its parent: a relative path ending in a
+        // net upward traversal ("a/../..") resolves outside the project while its parent
+        // canonicalises back inside it, so a parent-only check would let the escape
+        // through. Normalising lexically resolves the ".." elements without touching the
+        // filesystem, so this stays consistent with [root] even across symlinked path
+        // prefixes, and a legitimate in-project file is never misrejected.
+        val rootPath = root.toPath().normalize()
+        val filePath = File(root, relative).toPath().normalize()
+        require(filePath.startsWith(rootPath)) { "Workspace path escapes project" }
+        return File(root, relative)
     }
 
     fun snapshot(root: File): Map<String, String> = root.walkTopDown()

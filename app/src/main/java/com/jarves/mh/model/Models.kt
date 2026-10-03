@@ -330,6 +330,15 @@ sealed interface RuntimeEvent {
     data class PreviewStarted(override val sessionId: String, val url: String) : RuntimeEvent
     data class SessionCompleted(override val sessionId: String) : RuntimeEvent
     data class SessionFailed(override val sessionId: String, val reason: String) : RuntimeEvent
+
+    /**
+     * A deliberate, user-initiated stop reached a terminal state. This is deliberately
+     * *not* [SessionFailed]: routing a stop through the failure channel forced the
+     * ViewModel to recognise it by prose substring matching ("Stopped by user") to avoid
+     * treating it as an API-key rejection. A first-class event removes that fragility —
+     * a stop can never trigger key rotation or an automatic restart.
+     */
+    data class SessionStopped(override val sessionId: String) : RuntimeEvent
 }
 
 data class ChatMessage(
