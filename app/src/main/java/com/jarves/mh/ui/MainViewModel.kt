@@ -354,7 +354,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private data class SessionOwner(val projectId: String, val chatId: String?)
 
-    @Volatile private val sessionProjects = mutableMapOf<String, SessionOwner>()
+    private val sessionProjects = java.util.concurrent.ConcurrentHashMap<String, SessionOwner>()
 
     /**
      * In-flight transcripts for sessions whose chat is not currently visible. Deltas are
@@ -365,7 +365,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private class BackgroundBuffer(val base: List<ChatMessage>, val messages: MutableList<ChatMessage> = mutableListOf())
 
-    @Volatile private val backgroundBuffers = mutableMapOf<String, BackgroundBuffer>()
+    private val backgroundBuffers = java.util.concurrent.ConcurrentHashMap<String, BackgroundBuffer>()
     private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
     private val initialAgentKind = AgentKind.fromStored(preferences.agentKind)
     private val initialPrimaryAgentKind = preferences.primaryAgentKind
@@ -3846,7 +3846,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 is RuntimeEvent.SessionCompleted -> {
                     val finishedAt = System.currentTimeMillis()
-                    val running = current.runningProjectIds - (owner?.projectId ?: current.activeProject?.id)
+                    val finishedProjectId = owner?.projectId ?: current.activeProject?.id
+                    val running = if (finishedProjectId != null) current.runningProjectIds - finishedProjectId else current.runningProjectIds
                     attachTaskDuration(finishWorkSegment(current, finishedAt), finishedAt).copy(
                         runningProjectIds = running,
                         isRunning = current.activeProject?.id in running,
@@ -3859,7 +3860,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is RuntimeEvent.SessionFailed -> {
                     val finishedAt = System.currentTimeMillis()
-                    val running = current.runningProjectIds - (owner?.projectId ?: current.activeProject?.id)
+                    val finishedProjectId = owner?.projectId ?: current.activeProject?.id
+                    val running = if (finishedProjectId != null) current.runningProjectIds - finishedProjectId else current.runningProjectIds
                     attachTaskDuration(
                         finishWorkSegment(
                             appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
@@ -3925,13 +3927,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     buffer.messages.add(ChatMessage(fromUser = false, text = event.text))
                 }
-                flushBackgroundBuffer(owner, buffer)
+                flushBackgroundBuffer(owner, chatId, buffer)
             }
             is RuntimeEvent.SessionCompleted -> {
                 val buffer = backgroundBuffers.remove(event.sessionId)
                 if (buffer != null) {
                     buffer.messages.add(ChatMessage(fromUser = false, text = "✓ Task completed in background"))
-                    flushBackgroundBuffer(owner, buffer)
+                    flushBackgroundBuffer(owner, chatId, buffer)
                 }
                 markProjectFinished(owner.projectId)
                 sessionProjects.remove(event.sessionId)
@@ -3941,7 +3943,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val buffer = backgroundBuffers.remove(event.sessionId)
                 if (buffer != null) {
                     buffer.messages.add(ChatMessage(fromUser = false, text = "✗ Task stopped in background: ${event.reason}"))
-                    flushBackgroundBuffer(owner, buffer)
+                    flushBackgroundBuffer(owner, chatId, buffer)
                 }
                 markProjectFinished(owner.projectId)
                 sessionProjects.remove(event.sessionId)
@@ -3958,8 +3960,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Writes a background session's accumulated transcript to its own persisted chat. */
-    private fun flushBackgroundBuffer(owner: SessionOwner, buffer: BackgroundBuffer) {
-        transcriptWrites.trySend(TranscriptWrite(owner.projectId, owner.chatId, buffer.base + buffer.messages))
+    private fun flushBackgroundBuffer(owner: SessionOwner, chatId: String, buffer: BackgroundBuffer) {
+        transcriptWrites.trySend(TranscriptWrite(owner.projectId, chatId, buffer.base + buffer.messages))
     }
 
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
