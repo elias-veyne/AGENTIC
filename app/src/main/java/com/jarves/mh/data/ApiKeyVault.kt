@@ -122,6 +122,20 @@ class ApiKeyVault(context: Context) {
         return true
     }
 
+    /** Adds a key for [providerId] under an isolated [scope]. */
+    @Synchronized
+    fun add(scope: String, providerId: String, name: String, secret: String): ApiKeyInfo {
+        val scopedId = scopedProviderId(scope, providerId)
+        return add(scopedId, name, secret)
+    }
+
+    /** Removes a key for [providerId] under an isolated [scope]. */
+    @Synchronized
+    fun remove(scope: String, providerId: String, keyId: String) {
+        val scopedId = scopedProviderId(scope, providerId)
+        remove(scopedId, keyId)
+    }
+
     @Synchronized
     fun remove(providerId: String, keyId: String) {
         val remaining = ensurePool(providerId).filterNot { it.id == keyId }

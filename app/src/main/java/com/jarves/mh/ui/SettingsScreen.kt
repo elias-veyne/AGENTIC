@@ -121,7 +121,7 @@ import androidx.compose.material.icons.filled.Link
     onSetNotifHeartbeatWarnings: (Boolean) -> Unit = {},
     onSaveGithubPat: (String) -> Unit = {},
     onClearGithubPat: () -> Unit = {},
-    onNavigateToGitHub: () -> Unit = {},
+    onConnectGitHub: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -371,10 +371,15 @@ import androidx.compose.material.icons.filled.Link
                          ) {
                              Column {
                                  Text("GitHub", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                 Text("Connect your GitHub account", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                 Text(
+                                     state.githubLogin?.let { "Signed in as @$it · browse & clone repos" }
+                                         ?: "Connect your GitHub account",
+                                     fontSize = 11.sp,
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                 )
                              }
-                             TextButton(onClick = { onNavigateToGitHub() }) {
-                                 Text("Manage")
+                             TextButton(onClick = onConnectGitHub) {
+                                 Text(state.githubLogin?.let { "Manage" } ?: "Connect")
                              }
                          }
                          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -1028,7 +1033,7 @@ private fun NotificationToggleRow(
     onSetNotifHeartbeatWarnings: (Boolean) -> Unit = {},
     onSaveGithubPat: (String) -> Unit = {},
     onClearGithubPat: () -> Unit = {},
-    onNavigateToGitHub: () -> Unit = {},
+    onConnectGitHub: () -> Unit = {},
 ) {
     LegacySettingsScreen(
         state = state,
@@ -1046,6 +1051,6 @@ private fun NotificationToggleRow(
         onSetNotifHeartbeatWarnings = onSetNotifHeartbeatWarnings,
         onSaveGithubPat = onSaveGithubPat,
         onClearGithubPat = onClearGithubPat,
-        onNavigateToGitHub = onNavigateToGitHub,
+        onConnectGitHub = onConnectGitHub,
     )
 }

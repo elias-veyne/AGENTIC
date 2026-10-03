@@ -92,6 +92,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarves.mh.data.ApiKeyInfo
+import com.jarves.mh.agent.AgentMode
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.DSH_PROTOCOL_PROVIDERS
 import com.jarves.mh.model.ProviderKind
@@ -114,6 +115,19 @@ private data class KeyConnectionStatus(
     val successful: Boolean? = null,
     val providerMessage: String? = null,
     val label: String = if (successful == true) "Verified" else "Failed",
+)
+
+/**
+ * Scoped key operations shared by the Sub-Agent config cards. Sub-agent keys live
+ * in isolated vault pools (see [MainViewModel.AGENT2_SCOPE] / [AGENT3_SCOPE]) so
+ * they never appear in the Head's per-provider list and can't re-key it.
+ */
+class SubAgentKeyOps(
+    val get: (String, ProviderKind) -> String,
+    val list: (String, ProviderKind) -> List<ApiKeyInfo>,
+    val add: (String, ProviderKind, String, String) -> List<ApiKeyInfo>,
+    val activate: (String, ProviderKind, String) -> List<ApiKeyInfo>,
+    val remove: (String, ProviderKind, String) -> List<ApiKeyInfo>,
 )
 
 /**
@@ -142,6 +156,16 @@ fun AgentScreen(
     onInstallAgent: (AgentKind) -> Unit = {},
     onCheckAgentUpdates: () -> Unit = {},
     onUpdateAgent: (AgentKind) -> Unit = {},
+
+    // ── Sub-Agents (Agentic mode) ──
+    agentMode: AgentMode = AgentMode.SIMPLE,
+    agent2Provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
+    agent2ActiveApiKeyName: String? = null,
+    agent3Provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
+    agent3ActiveApiKeyName: String? = null,
+    subAgentKeys: SubAgentKeyOps? = null,
+    onSaveAgent2Provider: (ProviderProfile, String) -> Unit = { _, _ -> },
+    onSaveAgent3Provider: (ProviderProfile, String) -> Unit = { _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     var selectedKind by rememberSaveable(state.provider.kind) { mutableStateOf(state.provider.kind) }
@@ -984,6 +1008,21 @@ fun AgentScreen(
                 }
             }
 
+            // ── 2.5. Sub-Agents (Agentic mode workers) ──
+            item {
+                SubAgentsSection(
+                    state = state,
+                    agentMode = agentMode,
+                    agent2Provider = agent2Provider,
+                    agent2ActiveApiKeyName = agent2ActiveApiKeyName,
+                    agent3Provider = agent3Provider,
+                    agent3ActiveApiKeyName = agent3ActiveApiKeyName,
+                    subAgentKeys = subAgentKeys,
+                    onSaveAgent2Provider = onSaveAgent2Provider,
+                    onSaveAgent3Provider = onSaveAgent3Provider,
+                )
+            }
+
             // ── 3. Runtime Updates Card ──
             item {
                 AgentUpdateBlock(
@@ -992,7 +1031,6 @@ fun AgentScreen(
                     onUpdate = onUpdateAgent,
                 )
             }
-
             // ── 4. Subtle Footer ──
             item {
                 Column(
@@ -1014,6 +1052,288 @@ fun AgentScreen(
     }
     }
 }
+/**
+ * Section exposing the two worker agents used by Agentic mode. The orchestration
+ * engine (shard routing in [MainViewModel.runRealShard]) already reads these
+ * profiles; this is the only place a user can configure them.
+ */
+@Composable
+private fun SubAgentsSection(
+    state: AppUiState,
+    agentMode: AgentMode,
+    agent2Provider: ProviderProfile,
+    agent2ActiveApiKeyName: String?,
+    agent3Provider: ProviderProfile,
+    agent3ActiveApiKeyName: String?,
+    subAgentKeys: SubAgentKeyOps?,
+    onSaveAgent2Provider: (ProviderProfile, String) -> Unit,
+    onSaveAgent3Provider: (ProviderProfile, String) -> Unit,
+) {
+    val keys = subAgentKeys ?: return
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.size(38.dp).background(PocketOrange.copy(alpha = 0.10f), RoundedCornerShape(11.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Psychology, null, tint = PocketOrange, modifier = Modifier.size(19.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Sub-Agents", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        if (agentMode == AgentMode.AGENTIC)
+                            "Active · these two workers run your Agentic-mode shards"
+                        else "Used by Agentic mode · switch to it from the chat composer",
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            SubAgentConfigCard(
+                label = "Sub-Agent 1",
+                scope = MainViewModel.AGENT2_SCOPE,
+                profile = agent2Provider,
+                activeKeyName = agent2ActiveApiKeyName,
+                keys = keys,
+                onSaveProvider = onSaveAgent2Provider,
+            )
+            Spacer(Modifier.height(12.dp))
+            SubAgentConfigCard(
+                label = "Sub-Agent 2",
+                scope = MainViewModel.AGENT3_SCOPE,
+                profile = agent3Provider,
+                activeKeyName = agent3ActiveApiKeyName,
+                keys = keys,
+                onSaveProvider = onSaveAgent3Provider,
+            )
+        }
+    }
+}
+
+/**
+ * One sub-agent's provider + model + scoped API key. Keys are written to an
+ * isolated vault pool so they never collide with the Head's per-provider keys.
+ */
+@Composable
+private fun SubAgentConfigCard(
+    label: String,
+    scope: String,
+    profile: ProviderProfile,
+    activeKeyName: String?,
+    keys: SubAgentKeyOps,
+    onSaveProvider: (ProviderProfile, String) -> Unit,
+) {
+    val visibleKinds = remember { providersForAgent(AgentKind.DEEPSEEK_HARNESS) }
+    var expanded by rememberSaveable(label, profile.kind) { mutableStateOf(false) }
+    var selectedKind by rememberSaveable(label, profile.kind) { mutableStateOf(profile.kind) }
+    var baseUrl by rememberSaveable(label, profile.baseUrl) { mutableStateOf(profile.baseUrl) }
+    var model by rememberSaveable(label, profile.model) { mutableStateOf(profile.model) }
+    var dshApi by rememberSaveable(label, profile.dshApi) { mutableStateOf(profile.dshApi) }
+    var keyName by remember(label, selectedKind) { mutableStateOf("") }
+    var keySecret by remember(label, selectedKind) { mutableStateOf("") }
+    var keySecretVisible by remember(label, selectedKind) { mutableStateOf(false) }
+    var savedKeys by remember(label, selectedKind, activeKeyName) {
+        mutableStateOf(keys.list(scope, selectedKind))
+    }
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                        buildString {
+                            append(selectedKind.title)
+                            if (model.isNotBlank()) append(" · $model")
+                            append(" · " + when {
+                                activeKeyName != null -> "key: $activeKeyName"
+                                savedKeys.isNotEmpty() -> "${savedKeys.size} key(s)"
+                                else -> "no key"
+                            })
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            AnimatedVisibility(expanded) {
+                Column(
+                    Modifier.padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Provider", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)) {
+                        Column {
+                            visibleKinds.forEachIndexed { index, kind ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedKind = kind
+                                            baseUrl = kind.defaultBaseUrl
+                                            model = kind.defaultModel
+                                            dshApi = defaultDshApiForProvider(kind)
+                                            savedKeys = keys.list(scope, kind)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(kind.title, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                        Text(kind.subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                    }
+                                    AgentSelectionDot(selectedKind == kind)
+                                }
+                                if (index != visibleKinds.lastIndex) {
+                                    HorizontalDivider(Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { if (!selectedKind.fixedBaseUrl) baseUrl = it },
+                        label = { Text("Base URL") },
+                        supportingText = if (selectedKind.fixedBaseUrl) ({ Text("Fixed by ${selectedKind.title}") }) else null,
+                        readOnly = selectedKind.fixedBaseUrl,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = { model = it },
+                        label = { Text("Model ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+
+                    if (selectedKind in DSH_PROTOCOL_PROVIDERS && !selectedKind.fixedProtocol) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text("Gateway protocol", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(5.dp))
+                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)) {
+                                Column {
+                                    listOf("anthropic-messages", "openai-completions", "openai-responses").forEach { option ->
+                                        Row(
+                                            Modifier.fillMaxWidth().clickable { dshApi = option }.padding(horizontal = 12.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(option, Modifier.weight(1f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                                            AgentSelectionDot(dshApi == option)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (savedKeys.isNotEmpty()) {
+                        Text("Saved keys (${savedKeys.size})", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        savedKeys.forEach { key ->
+                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)) {
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { savedKeys = keys.activate(scope, selectedKind, key.id) }
+                                        .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(key.name, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                        Text(
+                                            if (key.isActive) "Active" else "Tap to activate",
+                                            fontSize = 10.sp,
+                                            color = if (key.isActive) PocketOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    AgentSelectionDot(key.isActive)
+                                    IconButton(onClick = { savedKeys = keys.remove(scope, selectedKind, key.id) }) {
+                                        Icon(Icons.Default.DeleteSweep, "Remove", Modifier.size(17.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = keyName,
+                        onValueChange = { input ->
+                            if ((input.startsWith("sk-") || input.startsWith("ant-") || input.length > 30) &&
+                                !input.contains(" ") && keySecret.isBlank()
+                            ) {
+                                keySecret = input.trim()
+                                keyName = "${selectedKind.title} Key"
+                            } else keyName = input
+                        },
+                        label = { Text("Key name (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    OutlinedTextField(
+                        value = keySecret,
+                        onValueChange = { keySecret = it },
+                        label = { Text("API key") },
+                        singleLine = true,
+                        visualTransformation = if (keySecretVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { keySecretVisible = !keySecretVisible }) {
+                                Icon(if (keySecretVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Toggle visibility")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    Button(
+                        onClick = {
+                            val url = if (selectedKind.fixedBaseUrl) selectedKind.defaultBaseUrl else baseUrl.trim()
+                            onSaveProvider(ProviderProfile(selectedKind, url, model.trim(), dshApi = dshApi), keySecret.trim())
+                            keyName = ""
+                            keySecret = ""
+                            savedKeys = keys.list(scope, selectedKind)
+                        },
+                        enabled = model.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (keySecret.isNotBlank()) "Save sub-agent" else "Save model")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AgentProviderCard(
     state: AppUiState,

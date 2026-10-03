@@ -188,6 +188,12 @@ data class AppUiState(
     val gitCloneMessage: String? = null,
     val githubAuthStatus: GitHubAuthStatus = GitHubAuthStatus.DISCONNECTED,
     val githubLogin: String? = null,
+    /**
+     * Whether the shared GitHub connect/repo dialog is open. Hoisted to state so
+     * both the Projects import sheet and Settings open the *same* gh-backed flow
+     * instead of two divergent credential silos.
+     */
+    val githubDialogVisible: Boolean = false,
     /** Personal access token the agent can use for private repos / push. */
     val githubPat: String? = null,
     val githubUserCode: String? = null,
@@ -226,6 +232,14 @@ data class AppUiState(
     val previewReady: Boolean = false,
     val previewUrl: String? = null,
     val isRunning: Boolean = false,
+    /**
+     * Ids of every project whose agent task is currently running, across all
+     * projects — not just the visible one. `isRunning` is the visible-project
+     * view of this (`activeProjectId in runningProjectIds`); the set is the
+     * source of truth that lets several sessions overlap without one clobbering
+     * another's progress flags.
+     */
+    val runningProjectIds: Set<String> = emptySet(),
     val agentSessions: Map<String, String> = emptyMap(),
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
@@ -300,6 +314,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val installer = RuntimeInstaller(application)
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime)
     private fun activeRuntime(): com.jarves.mh.runtime.RuntimeBridge = agentRegistry.require(_state.value.agentKind).runtime
+
+    /** Marks [projectId]'s task as running and keeps the visible-project flag in sync. */
+    private fun markProjectRunning(projectId: String) {
+        _state.update {
+            val running = it.runningProjectIds + projectId
+            it.copy(runningProjectIds = running, isRunning = it.activeProject?.id in running)
+        }
+    }
+
+    /** Marks [projectId]'s task as finished and recomputes the visible-project flag. */
+    private fun markProjectFinished(projectId: String) {
+        _state.update {
+            val running = it.runningProjectIds - projectId
+            it.copy(runningProjectIds = running, isRunning = it.activeProject?.id in running)
+        }
+    }
+
     private val agentSystem = AgentSystem()
     private val providerApi = ProviderApiClient()
     private fun appUpdater(): AppUpdater = AppUpdater(
@@ -315,6 +346,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var githubAuthJob: kotlinx.coroutines.Job? = null
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
     private val failedApiKeyIds = mutableSetOf<String>()
+    /**
+     * Maps a runtime sessionId to the project + chat that own it. Runtime events carry
+     * only a sessionId; this lets [onRuntimeEvent] tell whether an event belongs
+     * to the chat the user is looking at or to a task running in the background
+     * on another project, so concurrent sessions never corrupt each other's output.
+     */
+    private data class SessionOwner(val projectId: String, val chatId: String?)
+
+    @Volatile private val sessionProjects = mutableMapOf<String, SessionOwner>()
+
+    /**
+     * In-flight transcripts for sessions whose chat is not currently visible. Deltas are
+     * accumulated here and written through to the persisted store, so when the user
+     * later opens that chat the background work is already there. The chat's pre-existing
+     * messages are captured once — a background chat is read-only, so nothing else can
+     * be writing to it and the base never needs reloading.
+     */
+    private class BackgroundBuffer(val base: List<ChatMessage>, val messages: MutableList<ChatMessage> = mutableListOf())
+
+    @Volatile private val backgroundBuffers = mutableMapOf<String, BackgroundBuffer>()
     private val transcriptWrites = Channel<TranscriptWrite>(Channel.UNLIMITED)
     private val initialAgentKind = AgentKind.fromStored(preferences.agentKind)
     private val initialPrimaryAgentKind = preferences.primaryAgentKind
@@ -1187,6 +1238,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ── Scoped key management for sub-agents ──
+    // Sub-agent keys live in isolated vault pools (AGENT2_SCOPE / AGENT3_SCOPE) so
+    // they never appear in the Head's per-provider list and can't re-key it.
+
+    /** Returns the active secret for [kind] under [scope], or "" if none. */
+    fun getScopedApiKey(scope: String, kind: ProviderKind): String =
+        vault.get(scope, kind.name).orEmpty()
+
+    /** Lists every saved key for [kind] under [scope]. */
+    fun getScopedApiKeys(scope: String, kind: ProviderKind): List<ApiKeyInfo> =
+        vault.list(scope, kind.name)
+
+    /** Adds a key for [kind] under [scope], then refreshes that sub-agent's state. */
+    fun addScopedApiKey(scope: String, kind: ProviderKind, name: String, secret: String): List<ApiKeyInfo> {
+        vault.add(scope, kind.name, name, secret)
+        refreshSubAgentKeys(scope, kind)
+        return vault.list(scope, kind.name)
+    }
+
+    /** Activates a key for [kind] under [scope], then refreshes that sub-agent's state. */
+    fun activateScopedApiKey(scope: String, kind: ProviderKind, keyId: String): List<ApiKeyInfo> {
+        vault.activate(scope, kind.name, keyId)
+        refreshSubAgentKeys(scope, kind)
+        return vault.list(scope, kind.name)
+    }
+
+    /** Removes a key for [kind] under [scope], then refreshes that sub-agent's state. */
+    fun removeScopedApiKey(scope: String, kind: ProviderKind, keyId: String): List<ApiKeyInfo> {
+        vault.remove(scope, kind.name, keyId)
+        refreshSubAgentKeys(scope, kind)
+        return vault.list(scope, kind.name)
+    }
+
+    /**
+     * Re-syncs a sub-agent's hasSecret / active-key-name fields after its scoped
+     * pool changes. No-ops for unknown scopes.
+     */
+    private fun refreshSubAgentKeys(scope: String, kind: ProviderKind) {
+        val keys = vault.list(scope, kind.name)
+        val activeName = keys.firstOrNull(ApiKeyInfo::isActive)?.name
+        _state.update { current ->
+            when (scope) {
+                AGENT2_SCOPE -> current.copy(
+                    agent2ActiveApiKeyName = activeName,
+                    agent2Provider = current.agent2Provider.copy(hasSecret = keys.isNotEmpty()),
+                )
+                AGENT3_SCOPE -> current.copy(
+                    agent3ActiveApiKeyName = activeName,
+                    agent3Provider = current.agent3Provider.copy(hasSecret = keys.isNotEmpty()),
+                )
+                else -> current
+            }
+        }
+    }
+
     /** Keeps the agent bridge mapped to the workspace root. */
     private fun configureBridgeRoots(projectId: String, rootPath: String) {
         dshRuntime.configureProjectRoot(projectId, rootPath)
@@ -1911,7 +2017,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        if (current.isRunning || current.projectTerminalRunning) {
+        // Read-only fallback only when the project being opened is itself running a
+        // task (so its live transcript is shown without disturbing it), or when a
+        // terminal command is mid-flight on the current project. An idle project may
+        // be opened fully even while another project's task runs in the background.
+        if (project.id in current.runningProjectIds || current.projectTerminalRunning) {
             val chats = preferences.loadProjectChats(project.id).ifEmpty {
                 listOf(ProjectChat(title = "Main chat"))
             }
@@ -1928,6 +2038,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        // The project being left may have an in-flight transcript (possibly a task
+        // still running in the background); persist it before swapping in the new
+        // project's chat so nothing is lost on the switch. A project whose task is
+        // still running is persisted without the "interrupted" marker — its live
+        // output keeps flowing to the background buffer.
+        val leavingRunning = _state.value.activeProject?.id in _state.value.runningProjectIds
+        persistMessages(includeLiveProcess = !leavingRunning)
         configureBridgeRoots(project.id, project.rootPath)
         val terminal = loadProjectTerminal(project)
         val suggestedRoot = if (project.rootPath.isBlank()) detectNestedProjectRoot(project) else null
@@ -2027,7 +2144,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 workspaceFiles = emptyList(),
                 androidProjectDetected = false,
                 filesLoading = false,
-                isRunning = false,
+                // Keep runningProjectIds: a background task on this project keeps
+                // running after we leave. isRunning is derived from the (now null)
+                // active project, so it resolves to false on its own.
+                isRunning = it.activeProject?.id in it.runningProjectIds,
                 agentSessions = emptyMap(),
                 pendingApproval = null,
                 projectTerminalLines = emptyList(),
@@ -2405,6 +2525,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         require(uri.host != "localhost" && uri.host != "127.0.0.1" && uri.host != "::1") { "Local Git URLs are not supported" }
         require(uri.path.count { it == '/' } >= 2) { "The URL must identify a Git repository" }
         return uri.toASCIIString()
+    }
+
+    /** Opens the shared GitHub connect dialog (Projects sheet and Settings both call this). */
+    fun showGitHubDialog() {
+        _state.update { it.copy(githubDialogVisible = true) }
+    }
+
+    /** Closes the shared GitHub connect dialog. */
+    fun hideGitHubDialog() {
+        if (_state.value.gitCloneRunning) return
+        _state.update { it.copy(githubDialogVisible = false) }
     }
 
     fun startGitHubLogin() {
@@ -3232,7 +3363,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 messages = it.messages + ChatMessage(fromUser = true, text = prompt.trim(), attachments = attachments),
                 pendingAttachments = emptyList(),
-                isRunning = true,
                 chatModeLocked = true,
                 cumulativeTokens = preferences.cumulativeTokens,
                 activity = listOf(ActivityItem("Understanding your request", "Preparing a safe plan", false)) + it.activity,
@@ -3246,6 +3376,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         touchProject(project.id)
+        markProjectRunning(project.id)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
         val runtimePrompt = if (attachments.isEmpty()) requestText else buildString {
@@ -3328,7 +3459,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         resolvedSecret = pinnedSecret,
                     )
                     activeRuntimeRequest?.let { request ->
-                        request.runtime.startSession(
+                        val sessionId = request.runtime.startSession(
                             request.project.id,
                             request.project.slug,
                             request.project.kind,
@@ -3337,6 +3468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             request.provider,
                             request.resolvedSecret,
                         )
+                        sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
                     }
                     val integrated = cooperative.jointIntegration(AgentId.peer("ui"), AgentId.peer("backend"))
                     _state.update {
@@ -3362,7 +3494,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 viewModelScope.launch {
                     activeRuntimeRequest?.let { request ->
-                        request.runtime.startSession(
+                        val sessionId = request.runtime.startSession(
                             request.project.id,
                             request.project.slug,
                             request.project.kind,
@@ -3371,6 +3503,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             request.provider,
                             request.resolvedSecret,
                         )
+                        sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
                     }
                 }
             }
@@ -3541,10 +3674,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun onRuntimeEvent(event: RuntimeEvent) {
         if (event is RuntimeEvent.SessionFailed && retryWithNextApiKey(event)) return
+        // Route by owning project. A session whose project is not the visible one
+        // must never touch the visible chat's state; it is buffered and written
+        // through to its own transcript instead.
+        val owner = sessionProjects[event.sessionId]
+        val visibleProjectId = _state.value.activeProject?.id
+        if (owner != null && owner.projectId != visibleProjectId) {
+            handleBackgroundEvent(event, owner)
+            return
+        }
         _state.update { current ->
             if (!current.isRunning) {
                 current
-            } else if (current.agentSessions.isNotEmpty() && event.sessionId !in current.agentSessions.values) {
+            } else if (owner == null && current.agentSessions.isNotEmpty() && event.sessionId !in current.agentSessions.values) {
                 current
             } else when (event) {
                 is RuntimeEvent.SessionStarted -> {
@@ -3704,8 +3846,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 is RuntimeEvent.SessionCompleted -> {
                     val finishedAt = System.currentTimeMillis()
+                    val running = current.runningProjectIds - (owner?.projectId ?: current.activeProject?.id)
                     attachTaskDuration(finishWorkSegment(current, finishedAt), finishedAt).copy(
-                        isRunning = false,
+                        runningProjectIds = running,
+                        isRunning = current.activeProject?.id in running,
                         agentSessions = emptyMap(),
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
@@ -3715,6 +3859,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is RuntimeEvent.SessionFailed -> {
                     val finishedAt = System.currentTimeMillis()
+                    val running = current.runningProjectIds - (owner?.projectId ?: current.activeProject?.id)
                     attachTaskDuration(
                         finishWorkSegment(
                             appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
@@ -3722,7 +3867,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         ),
                         finishedAt,
                     ).copy(
-                        isRunning = false,
+                        runningProjectIds = running,
+                        isRunning = current.activeProject?.id in running,
                         agentSessions = emptyMap(),
                         pendingApproval = null,
                         toastMessage = event.reason.takeIf { reason ->
@@ -3740,6 +3886,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
             activeRuntimeRequest = null
             failedApiKeyIds.clear()
+            sessionProjects.remove(event.sessionId)
+            backgroundBuffers.remove(event.sessionId)
         }
         if (event is RuntimeEvent.FilesChanged || event is RuntimeEvent.SessionCompleted) {
             _state.value.activeProject?.id?.let { touchProject(it) }
@@ -3749,6 +3897,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // final results. If Android kills the process, the last displayed timeline
         // is restored as an interrupted work block rather than disappearing.
         persistMessages(includeLiveProcess = true)
+    }
+
+    /**
+     * Handles an event from a session running on a project the user is not currently
+     * viewing. Its output is accumulated in [backgroundBuffers] and written through to
+     * that project's persisted transcript, so opening the chat later shows the work.
+     * The visible chat's state is never touched.
+     */
+    private fun handleBackgroundEvent(event: RuntimeEvent, owner: SessionOwner) {
+        val chatId = owner.chatId ?: run {
+            // An orchestration shard (no owning chat): just track the running set.
+            if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed) {
+                markProjectFinished(owner.projectId)
+                sessionProjects.remove(event.sessionId)
+            }
+            return
+        }
+        when (event) {
+            is RuntimeEvent.AssistantDelta -> {
+                val buffer = backgroundBuffers.getOrPut(event.sessionId) {
+                    BackgroundBuffer(preferences.loadMessages(owner.projectId, chatId))
+                }
+                val last = buffer.messages.lastOrNull()
+                if (last != null && !last.fromUser && last.workItems.isEmpty()) {
+                    buffer.messages[buffer.messages.lastIndex] = last.copy(text = last.text + event.text)
+                } else {
+                    buffer.messages.add(ChatMessage(fromUser = false, text = event.text))
+                }
+                flushBackgroundBuffer(owner, buffer)
+            }
+            is RuntimeEvent.SessionCompleted -> {
+                val buffer = backgroundBuffers.remove(event.sessionId)
+                if (buffer != null) {
+                    buffer.messages.add(ChatMessage(fromUser = false, text = "✓ Task completed in background"))
+                    flushBackgroundBuffer(owner, buffer)
+                }
+                markProjectFinished(owner.projectId)
+                sessionProjects.remove(event.sessionId)
+                touchProject(owner.projectId)
+            }
+            is RuntimeEvent.SessionFailed -> {
+                val buffer = backgroundBuffers.remove(event.sessionId)
+                if (buffer != null) {
+                    buffer.messages.add(ChatMessage(fromUser = false, text = "✗ Task stopped in background: ${event.reason}"))
+                    flushBackgroundBuffer(owner, buffer)
+                }
+                markProjectFinished(owner.projectId)
+                sessionProjects.remove(event.sessionId)
+                touchProject(owner.projectId)
+            }
+            is RuntimeEvent.FilesChanged -> {
+                touchProject(owner.projectId)
+            }
+            else -> {
+                // Reasoning/tool events for background sessions are not surfaced;
+                // they would clutter a transcript the user isn't watching.
+            }
+        }
+    }
+
+    /** Writes a background session's accumulated transcript to its own persisted chat. */
+    private fun flushBackgroundBuffer(owner: SessionOwner, buffer: BackgroundBuffer) {
+        transcriptWrites.trySend(TranscriptWrite(owner.projectId, owner.chatId, buffer.base + buffer.messages))
     }
 
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
@@ -3774,7 +3985,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // This is the key-failure retry: the vault's active key was just
             // switched above, so re-read it rather than reuse the request's
             // possibly-stale pinned secret.
-            request.runtime.startSession(
+            val sessionId = request.runtime.startSession(
                 request.project.id,
                 request.project.slug,
                 request.project.kind,
@@ -3783,6 +3994,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 request.provider,
                 resolvedSecret = vault.get(request.provider.kind.name),
             )
+            sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
         }
         return true
     }
@@ -3919,6 +4131,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 else -> null
             },
         )
+        sessionProjects[sessionId] = SessionOwner(projectId, null)
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
         collector.cancel()
@@ -3967,6 +4180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("Request: $instruction")
         }
         sessionId = runtime.startSession(projectId, projectSlug, projectKind, decomposePrompt, history, provider)
+        sessionProjects[sessionId] = SessionOwner(projectId, null)
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
         collector.cancel()

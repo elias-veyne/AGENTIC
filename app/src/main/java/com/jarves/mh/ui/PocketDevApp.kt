@@ -252,7 +252,6 @@ import java.io.ByteArrayInputStream
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-import com.jarves.mh.ui.GitHubConnectionScreen
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.ExtendedFloatingActionButton
 
@@ -260,7 +259,6 @@ private enum class RootScreen(val label: String, val icon: ImageVector) {
     PROJECTS("Home", Icons.Default.Home),
     AGENT("API Keys", Icons.Default.Key),
     SETTINGS("Settings", Icons.Default.Settings),
-    GITHUB("GitHub", Icons.Default.Link),
 }
 
 /** Demo-aligned navigation: Home / API Keys / Settings as the bottom bar. */
@@ -2044,6 +2042,7 @@ private fun RootScreenHost(
                     onRefreshGitHub = viewModel::refreshGitHubRepositories,
                     onDisconnectGitHub = viewModel::disconnectGitHub,
                     onCloneGitHub = viewModel::cloneGitHubRepository,
+                    onShowGitHubDialog = viewModel::showGitHubDialog,
                     onRenameProject = viewModel::renameProject,
                     onDeleteProject = viewModel::deleteProject,
                     onSettings = { screen = RootScreen.SETTINGS },
@@ -2067,6 +2066,20 @@ private fun RootScreenHost(
                     onInstallAgent = viewModel::installAgent,
                     onCheckAgentUpdates = viewModel::checkAgentUpdates,
                     onUpdateAgent = viewModel::updateAgent,
+                    agentMode = state.agentMode,
+                    agent2Provider = state.agent2Provider,
+                    agent2ActiveApiKeyName = state.agent2ActiveApiKeyName,
+                    agent3Provider = state.agent3Provider,
+                    agent3ActiveApiKeyName = state.agent3ActiveApiKeyName,
+                    subAgentKeys = SubAgentKeyOps(
+                        get = viewModel::getScopedApiKey,
+                        list = viewModel::getScopedApiKeys,
+                        add = viewModel::addScopedApiKey,
+                        activate = viewModel::activateScopedApiKey,
+                        remove = viewModel::removeScopedApiKey,
+                    ),
+                    onSaveAgent2Provider = viewModel::saveAgent2Provider,
+                    onSaveAgent3Provider = viewModel::saveAgent3Provider,
                 )
                 RootScreen.SETTINGS -> SettingsScreen(
                     state = state,
@@ -2096,11 +2109,7 @@ private fun RootScreenHost(
                     initialDebugUpdateManifestUrl = viewModel.debugUpdateManifestUrl(),
                     onSetDebugUpdateManifestUrl = viewModel::setDebugUpdateManifestUrl,
                     onClearDebugUpdateManifestUrl = viewModel::clearDebugUpdateManifestUrl,
-                    onNavigateToGitHub = { screen = RootScreen.GITHUB },
-                )
-                RootScreen.GITHUB -> GitHubConnectionScreen(
-                    onBack = { screen = RootScreen.SETTINGS },
-                    onConnectionChanged = { /* refresh state if needed */ },
+                    onConnectGitHub = viewModel::showGitHubDialog,
                 )
             }
         }
@@ -2123,6 +2132,19 @@ private fun RootScreenHost(
                 compactHeader = true,
             )
         }
+    }
+    // Single shared GitHub dialog: the Projects sheet and Settings both open this
+    // exact flow, so there is one gh-backed credential path, not two.
+    if (state.githubDialogVisible) {
+        GitHubConnectDialog(
+            state = state,
+            onDismiss = viewModel::hideGitHubDialog,
+            onStartGitHubLogin = viewModel::startGitHubLogin,
+            onGenerateNewGitHubCode = viewModel::generateNewGitHubCode,
+            onRefreshGitHub = viewModel::refreshGitHubRepositories,
+            onDisconnectGitHub = viewModel::disconnectGitHub,
+            onCloneGitHub = viewModel::cloneGitHubRepository,
+        )
     }
 }
 
@@ -3018,6 +3040,7 @@ private fun ProjectsScreen(
     onRefreshGitHub: () -> Unit,
     onDisconnectGitHub: () -> Unit,
     onCloneGitHub: (GitHubRepository) -> Unit,
+    onShowGitHubDialog: () -> Unit,
     onRenameProject: (String, String) -> Unit,
     onDeleteProject: (String) -> Unit,
     onSettings: () -> Unit,
@@ -3027,10 +3050,8 @@ private fun ProjectsScreen(
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
     var showGitDialog by rememberSaveable { mutableStateOf(false) }
-    var showGitHubDialog by rememberSaveable { mutableStateOf(false) }
     var importExpanded by rememberSaveable { mutableStateOf(false) }
     var gitUrl by rememberSaveable { mutableStateOf("") }
-    var repositorySearch by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     val projects = state.projects
     val context = LocalContext.current
@@ -3108,7 +3129,7 @@ private fun ProjectsScreen(
                 NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
                     accent = Color(0xFF7DD3FC),
-                    onClick = { showGitHubDialog = true },
+                    onClick = onShowGitHubDialog,
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -3254,7 +3275,7 @@ private fun ProjectsScreen(
                                 }
                                 Surface(
                                     modifier = Modifier.fillMaxWidth().clickable(enabled = !state.gitCloneRunning) {
-                                        showGitHubDialog = true
+                                        onShowGitHubDialog()
                                         if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED && state.githubRepositories.isEmpty()) onRefreshGitHub()
                                     },
                                     color = MaterialTheme.colorScheme.surface,
@@ -3453,111 +3474,6 @@ private fun ProjectsScreen(
         },
         dismissButton = { TextButton(onClick = { showGitDialog = false }, enabled = !state.gitCloneRunning) { Text("Cancel") } },
     )
-    if (showGitHubDialog) {
-        val clipboard = LocalClipboardManager.current
-        val filteredRepositories = state.githubRepositories.filter { repository ->
-            repositorySearch.isBlank() || repository.fullName.contains(repositorySearch, ignoreCase = true)
-        }
-        AlertDialog(
-            onDismissRequest = { if (!state.gitCloneRunning) showGitHubDialog = false },
-            icon = { Icon(Icons.Default.Code, null, tint = PocketOrange) },
-            title = { Text(state.githubLogin?.let { "GitHub · @$it" } ?: "Connect GitHub") },
-            text = {
-                when (state.githubAuthStatus) {
-                    GitHubAuthStatus.DISCONNECTED, GitHubAuthStatus.ERROR -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(
-                            state.githubMessage ?: "Sign in with GitHub's official CLI to browse public and private repositories.",
-                            color = if (state.githubAuthStatus == GitHubAuthStatus.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                        )
-                        Button(onClick = onStartGitHubLogin, modifier = Modifier.fillMaxWidth()) { Text("Sign in with GitHub") }
-                    }
-                    GitHubAuthStatus.STARTING -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
-                        Spacer(Modifier.height(12.dp))
-                        Text(state.githubMessage ?: "Starting GitHub sign-in…")
-                    }
-                    GitHubAuthStatus.AWAITING_USER -> Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Enter this one-time code in the GitHub page opened in your browser.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().clickable { state.githubUserCode?.let { clipboard.setText(AnnotatedString(it)) } },
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Text(
-                                state.githubUserCode.orEmpty(),
-                                modifier = Modifier.padding(16.dp),
-                                textAlign = TextAlign.Center,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp,
-                                letterSpacing = 2.sp,
-                            )
-                        }
-                        Text("Tap the code to copy it. PocketDev will connect automatically after approval.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(
-                            onClick = onGenerateNewGitHubCode,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Generate new code")
-                        }
-                    }
-                    GitHubAuthStatus.CONNECTED -> Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(state.githubMessage ?: "Select a repository", modifier = Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            IconButton(onClick = onRefreshGitHub, enabled = !state.githubRepositoriesLoading) {
-                                Icon(Icons.Default.Refresh, "Refresh repositories")
-                            }
-                        }
-                        OutlinedTextField(
-                            value = repositorySearch,
-                            onValueChange = { repositorySearch = it },
-                            placeholder = { Text("Search repositories") },
-                            leadingIcon = { Icon(Icons.Default.Search, null) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        if (state.githubRepositoriesLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(filteredRepositories, key = { it.fullName }) { repository ->
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth().clickable(enabled = !state.gitCloneRunning) {
-                                        showGitHubDialog = false
-                                        onCloneGitHub(repository)
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                ) {
-                                    Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(if (repository.private) Icons.Default.Key else Icons.Default.Code, null, modifier = Modifier.size(17.dp), tint = PocketOrange)
-                                        Spacer(Modifier.width(9.dp))
-                                        Column(Modifier.weight(1f)) {
-                                            Text(repository.fullName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text("${if (repository.private) "Private" else "Public"} · ${repository.defaultBranch}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
-                    TextButton(onClick = { showGitHubDialog = false }) { Text("Close") }
-                }
-            },
-            dismissButton = {
-                if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
-                    TextButton(onClick = { onDisconnectGitHub(); showGitHubDialog = false }) { Text("Disconnect") }
-                } else if (state.githubAuthStatus != GitHubAuthStatus.STARTING) {
-                    TextButton(onClick = { showGitHubDialog = false }) { Text("Cancel") }
-                }
-            },
-        )
-    }
     val update = state.appUpdate
     if (showUpdateDialog && update != null) {
         val canInstall = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
@@ -3615,6 +3531,122 @@ private fun ProjectsScreen(
             dismissButton = { if (!installing) TextButton(onClick = { showUpdateDialog = false }) { Text("Later") } },
         )
     }
+}
+
+@Composable
+private fun GitHubConnectDialog(
+    state: AppUiState,
+    onDismiss: () -> Unit,
+    onStartGitHubLogin: () -> Unit,
+    onGenerateNewGitHubCode: () -> Unit,
+    onRefreshGitHub: () -> Unit,
+    onDisconnectGitHub: () -> Unit,
+    onCloneGitHub: (GitHubRepository) -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    var repositorySearch by rememberSaveable { mutableStateOf("") }
+    val filteredRepositories = state.githubRepositories.filter { repository ->
+        repositorySearch.isBlank() || repository.fullName.contains(repositorySearch, ignoreCase = true)
+    }
+    AlertDialog(
+        onDismissRequest = { if (!state.gitCloneRunning) onDismiss() },
+        icon = { Icon(Icons.Default.Code, null, tint = PocketOrange) },
+        title = { Text(state.githubLogin?.let { "GitHub · @$it" } ?: "Connect GitHub") },
+        text = {
+            when (state.githubAuthStatus) {
+                GitHubAuthStatus.DISCONNECTED, GitHubAuthStatus.ERROR -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        state.githubMessage ?: "Sign in with GitHub's official CLI to browse public and private repositories.",
+                        color = if (state.githubAuthStatus == GitHubAuthStatus.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                    )
+                    Button(onClick = onStartGitHubLogin, modifier = Modifier.fillMaxWidth()) { Text("Sign in with GitHub") }
+                }
+                GitHubAuthStatus.STARTING -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                    Spacer(Modifier.height(12.dp))
+                    Text(state.githubMessage ?: "Starting GitHub sign-in…")
+                }
+                GitHubAuthStatus.AWAITING_USER -> Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Enter this one-time code in the GitHub page opened in your browser.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { state.githubUserCode?.let { clipboard.setText(AnnotatedString(it)) } },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Text(
+                            state.githubUserCode.orEmpty(),
+                            modifier = Modifier.padding(16.dp),
+                            textAlign = TextAlign.Center,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            letterSpacing = 2.sp,
+                        )
+                    }
+                    Text("Tap the code to copy it. Agentic will connect automatically after approval.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(
+                        onClick = onGenerateNewGitHubCode,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Generate new code")
+                    }
+                }
+                GitHubAuthStatus.CONNECTED -> Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(state.githubMessage ?: "Select a repository", modifier = Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = onRefreshGitHub, enabled = !state.githubRepositoriesLoading) {
+                            Icon(Icons.Default.Refresh, "Refresh repositories")
+                        }
+                    }
+                    OutlinedTextField(
+                        value = repositorySearch,
+                        onValueChange = { repositorySearch = it },
+                        placeholder = { Text("Search repositories") },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (state.githubRepositoriesLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(filteredRepositories, key = { it.fullName }) { repository ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().clickable(enabled = !state.gitCloneRunning) {
+                                    onDismiss()
+                                    onCloneGitHub(repository)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            ) {
+                                Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(if (repository.private) Icons.Default.Key else Icons.Default.Code, null, modifier = Modifier.size(17.dp), tint = PocketOrange)
+                                    Spacer(Modifier.width(9.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(repository.fullName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("${if (repository.private) "Private" else "Public"} · ${repository.defaultBranch}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
+        },
+        dismissButton = {
+            if (state.githubAuthStatus == GitHubAuthStatus.CONNECTED) {
+                TextButton(onClick = { onDisconnectGitHub(); onDismiss() }) { Text("Disconnect") }
+            } else if (state.githubAuthStatus != GitHubAuthStatus.STARTING) {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 @Composable
