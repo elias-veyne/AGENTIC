@@ -80,6 +80,9 @@ class AgentSystem(
         }
 
         // V4: heartbeat monitor loop — watches each worker and escalates on silence.
+        // The ticker is what makes detection real: before this, only Received was ever
+        // emitted because nothing ever called checkHealth().
+        val heartbeatTicker = heartbeat.monitor(this)
         val heartbeatJob = launch {
             heartbeat.events
                 .onEach { event ->
@@ -101,7 +104,11 @@ class AgentSystem(
         _events.emit(AgentEvent.TaskShardsDispatched(taskId, assigned.size))
         val run = orchestrator.runShards(taskId, assigned, executor)
 
+        heartbeatTicker.cancelAndJoin()
         heartbeatJob.cancelAndJoin()
+        // Workers are done; stop watching them so a finished run is not later
+        // reported as unresponsive.
+        workers.forEach { heartbeat.retire(it) }
 
         if (run.allSucceeded) {
             _events.emit(AgentEvent.TaskCompleted(taskId, run.mergedOutput))

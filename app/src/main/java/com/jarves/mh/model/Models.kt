@@ -420,4 +420,10 @@ data class ActivityItem(
     val detail: String,
     val isComplete: Boolean = true,
     val isCommand: Boolean = false,
+    /**
+     * Which orchestration worker produced this item. Null for the head session's own
+     * activity; "sub1"/"sub2" for a sub-agent shard, so the chat can group shard work
+     * into a visible task tree instead of showing one undifferentiated stream.
+     */
+    val worker: String? = null,
 )

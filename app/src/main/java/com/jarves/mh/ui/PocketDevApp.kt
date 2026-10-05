@@ -4048,7 +4048,9 @@ private fun WorkspaceScreen(
         ChatSwitcherDialog(
             chats = state.projectChats,
             activeChatId = state.activeChatId,
-            switchingEnabled = !state.isRunning,
+            // Switching is always allowed: a chat left running keeps working in the background and
+                    // its transcript is buffered, so blocking the switcher would trap the user
+                    // in whatever chat happened to be busy.
             onDismiss = { showChats = false },
             onCreate = {
                 onCreateChat()

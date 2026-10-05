@@ -240,6 +240,12 @@ data class AppUiState(
      * another's progress flags.
      */
     val runningProjectIds: Set<String> = emptySet(),
+    /**
+     * Ids ("projectId::chatId") of every chat with a live agent task. Chat-scoped so
+     * two chats in the SAME project can run at once, and so the visible chat's
+     * running flag is about that chat rather than the whole project.
+     */
+    val runningChatIds: Set<String> = emptySet(),
     val agentSessions: Map<String, String> = emptyMap(),
     val toastMessage: String? = null,
     val projectTerminalLines: List<TerminalOutputLine> = emptyList(),
@@ -330,6 +336,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(runningProjectIds = running, isRunning = it.activeProject?.id in running)
         }
     }
+
+    /** Composite key for the chat-scoped running set. */
+    private fun chatKey(projectId: String, chatId: String?): String = "$projectId::$chatId"
+
+    /**
+     * Marks one chat as running. [isRunning] is recomputed against the *active* chat so
+     * a second chat in the same project can start without the first one's spinner (and
+     * its send guard) bleeding across.
+     */
+    private fun markChatRunning(projectId: String, chatId: String?) {
+        _state.update {
+            val chats = it.runningChatIds + chatKey(projectId, chatId)
+            it.copy(
+                runningChatIds = chats,
+                isRunning = activeChatKeyOf(it) in chats,
+            )
+        }
+    }
+
+    /** Clears one chat's running flag, leaving every other chat's task untouched. */
+    private fun markChatFinished(projectId: String, chatId: String?) {
+        _state.update {
+            val chats = it.runningChatIds - chatKey(projectId, chatId)
+            it.copy(
+                runningChatIds = chats,
+                isRunning = activeChatKeyOf(it) in chats,
+            )
+        }
+    }
+
+    private fun activeChatKeyOf(state: AppUiState): String? {
+        val projectId = state.activeProject?.id ?: return null
+        // A null chat id still yields a stable key ("projectId::null") so a run started
+        // before a chat existed can be matched and cleared on completion.
+        return chatKey(projectId, state.activeChatId)
+    }
+
+    /** True when the given chat already has a live task (used to gate send per chat). */
+    private fun isChatRunning(state: AppUiState, projectId: String, chatId: String?): Boolean =
+        chatKey(projectId, chatId) in state.runningChatIds
 
     private val agentSystem = AgentSystem()
     private val providerApi = ProviderApiClient()
@@ -2144,10 +2190,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 workspaceFiles = emptyList(),
                 androidProjectDetected = false,
                 filesLoading = false,
-                // Keep runningProjectIds: a background task on this project keeps
-                // running after we leave. isRunning is derived from the (now null)
-                // active project, so it resolves to false on its own.
-                isRunning = it.activeProject?.id in it.runningProjectIds,
+                // Keep runningProjectIds and runningChatIds: background tasks on this
+                // project keep running after we leave. isRunning is chat-scoped and
+                // derived from the (now null) active project, so it resolves to false.
+                isRunning = false,
                 agentSessions = emptyMap(),
                 pendingApproval = null,
                 projectTerminalLines = emptyList(),
@@ -2962,7 +3008,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createChat() {
         val project = _state.value.activeProject ?: return
-        if (_state.value.isRunning) return
+        // Deliberately NOT gated on isRunning: OpenCode-style concurrent sessions mean a
+        // new chat can be started while another one is still working. The previous guard
+        // made a second chat impossible to even create while a task ran, and because
+        // isRunning is project-scoped it also blocked a second chat in the same project.
         persistMessages()
         val chat = ProjectChat(mode = _state.value.agentMode)
         val chats = listOf(chat) + _state.value.projectChats
@@ -2977,6 +3026,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeChatRegistryModel = chat.registryModelId,
                 chatModeLocked = false,
                 totalChats = it.totalChats + 1,
+                // A brand-new chat has no task of its own; whatever was running keeps
+                // running under its own chat key.
+                isRunning = false,
                 messages = listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")),
                 liveProcess = emptyList(),
                 liveThinking = false,
@@ -3017,18 +3069,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun switchChat(chatId: String) {
         val current = _state.value
         val project = current.activeProject ?: return
-        if (current.isRunning || current.activeChatId == chatId) return
+        // Switching away from a running chat is allowed — its session keeps going and its
+        // output is buffered by handleBackgroundEvent. Only the redundant self-switch and
+        // a chat that does not exist are refused.
+        if (current.activeChatId == chatId) return
         val chat = current.projectChats.firstOrNull { it.id == chatId } ?: return
         persistMessages()
         val saved = preferences.loadMessages(project.id, chat.id)
-        _state.update {
-            it.copy(
+        _state.update { latest ->
+            latest.copy(
                 activeChatId = chat.id,
                 activeChatMode = chat.mode,
                 activeChatKeyName = chat.keyName,
                 activeChatModel = chat.model,
                 activeChatRegistryModel = chat.registryModelId,
                 chatModeLocked = saved.any { it.fromUser } || saved.any { !it.fromUser },
+                // This chat may already have a task running in the background — show its
+                // spinner, since isRunning is scoped to the chat now on screen.
+                isRunning = chatKey(project.id, chat.id) in latest.runningChatIds,
                 messages = saved.ifEmpty { listOf(ChatMessage(fromUser = false, text = "Hi! Tell me what you want to build or change.")) },
                 liveProcess = emptyList(),
                 liveThinking = false,
@@ -3328,7 +3386,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun sendPrompt(prompt: String) {
         val project = state.value.activeProject ?: return
         val attachments = state.value.pendingAttachments
-        if ((prompt.isBlank() && attachments.isEmpty()) || state.value.isRunning) return
+        // Per-chat, not per-project: this chat may already be busy, but a different chat
+        // in the same project (or another project entirely) must still be able to send.
+        if (prompt.isBlank() && attachments.isEmpty()) return
+        if (isChatRunning(state.value, project.id, state.value.activeChatId)) return
         val requestText = prompt.trim().ifBlank { "Please review the attached files." }
         updateActiveChatTitle(requestText)
         // Multi-provider registry takes priority: when a chat is bound to a
@@ -3377,6 +3438,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         touchProject(project.id)
         markProjectRunning(project.id)
+        markChatRunning(project.id, state.value.activeChatId)
         persistMessages()
         val history = state.value.messages // includes all messages up to now
         val runtimePrompt = if (attachments.isEmpty()) requestText else buildString {
@@ -3397,6 +3459,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val runtime = activeRuntime()
 
                     // V3: LLM-driven decomposition — the model decides how to split the task.
+                    // When the reply cannot be parsed the fallback is announced instead of
+                    // silently applied, so a generic UI/backend split is never mistaken for
+                    // a plan the model actually chose.
+                    val parentChatId = state.value.activeChatId
                     val decomposer = Decomposer { instruction ->
                         val raw = runLLMDecompose(
                             runtime,
@@ -3407,7 +3473,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             history,
                             runProvider,
                         )
-                        parseLLMDecompose(raw)
+                        parseLLMDecompose(raw) ?: run {
+                            _state.update { current ->
+                                current.copy(
+                                    toastMessage = "Could not read the task breakdown — using a generic split",
+                                )
+                            }
+                            Decomposer.DecomposedChild.Default.decompose(instruction)
+                        }
                     }
 
                     // Real executor: each shard runs its own PRoot session concurrently (V2).
@@ -3428,6 +3501,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             state.value.agent2Provider,
                             state.value.agent3Provider,
                             idx,
+                            state.value.activeChatId,
                         )
                     }
 
@@ -3848,9 +3922,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val finishedAt = System.currentTimeMillis()
                     val finishedProjectId = owner?.projectId ?: current.activeProject?.id
                     val running = if (finishedProjectId != null) current.runningProjectIds - finishedProjectId else current.runningProjectIds
+                    val finishedChatId = owner?.chatId
+                        ?: current.activeChatId?.takeIf { finishedProjectId == current.activeProject?.id }
+                    val runningChats = current.runningChatIds - chatKey(finishedProjectId.orEmpty(), finishedChatId)
                     attachTaskDuration(finishWorkSegment(current, finishedAt), finishedAt).copy(
                         runningProjectIds = running,
-                        isRunning = current.activeProject?.id in running,
+                        runningChatIds = runningChats,
+                        isRunning = activeChatKeyOf(current) in runningChats,
                         agentSessions = emptyMap(),
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
@@ -3865,6 +3943,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val finishedAt = System.currentTimeMillis()
                     val finishedProjectId = owner?.projectId ?: current.activeProject?.id
                     val running = if (finishedProjectId != null) current.runningProjectIds - finishedProjectId else current.runningProjectIds
+                    val stoppedChatId = owner?.chatId
+                        ?: current.activeChatId?.takeIf { finishedProjectId == current.activeProject?.id }
+                    val stoppedChats = current.runningChatIds - chatKey(finishedProjectId.orEmpty(), stoppedChatId)
                     attachTaskDuration(
                         finishWorkSegment(
                             appendWorkItem(current, ActivityItem("Task stopped", "Stopped by user")),
@@ -3873,7 +3954,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         finishedAt,
                     ).copy(
                         runningProjectIds = running,
-                        isRunning = current.activeProject?.id in running,
+                        runningChatIds = stoppedChats,
+                        isRunning = activeChatKeyOf(current) in stoppedChats,
                         agentSessions = emptyMap(),
                         pendingApproval = null,
                         toastMessage = null,
@@ -3886,6 +3968,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val finishedAt = System.currentTimeMillis()
                     val finishedProjectId = owner?.projectId ?: current.activeProject?.id
                     val running = if (finishedProjectId != null) current.runningProjectIds - finishedProjectId else current.runningProjectIds
+                    val failedChatId = owner?.chatId
+                        ?: current.activeChatId?.takeIf { finishedProjectId == current.activeProject?.id }
+                    val failedChats = current.runningChatIds - chatKey(finishedProjectId.orEmpty(), failedChatId)
                     attachTaskDuration(
                         finishWorkSegment(
                             appendWorkItem(current, ActivityItem("Task stopped", event.reason)),
@@ -3894,7 +3979,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         finishedAt,
                     ).copy(
                         runningProjectIds = running,
-                        isRunning = current.activeProject?.id in running,
+                        runningChatIds = failedChats,
+                        isRunning = activeChatKeyOf(current) in failedChats,
                         agentSessions = emptyMap(),
                         pendingApproval = null,
                         toastMessage = event.reason.takeIf { reason ->
@@ -3936,6 +4022,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // An orchestration shard (no owning chat): just track the running set.
             if (event is RuntimeEvent.SessionCompleted || event is RuntimeEvent.SessionFailed || event is RuntimeEvent.SessionStopped) {
                 markProjectFinished(owner.projectId)
+                markChatFinished(owner.projectId, null)
                 sessionProjects.remove(event.sessionId)
             }
             return
@@ -3960,6 +4047,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     flushBackgroundBuffer(owner, chatId, buffer)
                 }
                 markProjectFinished(owner.projectId)
+                markChatFinished(owner.projectId, chatId)
                 sessionProjects.remove(event.sessionId)
                 touchProject(owner.projectId)
             }
@@ -3970,6 +4058,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     flushBackgroundBuffer(owner, chatId, buffer)
                 }
                 markProjectFinished(owner.projectId)
+                markChatFinished(owner.projectId, chatId)
                 sessionProjects.remove(event.sessionId)
                 touchProject(owner.projectId)
             }
@@ -3980,6 +4069,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     flushBackgroundBuffer(owner, chatId, buffer)
                 }
                 markProjectFinished(owner.projectId)
+                markChatFinished(owner.projectId, chatId)
                 sessionProjects.remove(event.sessionId)
                 touchProject(owner.projectId)
             }
@@ -4118,6 +4208,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         agent2Provider: ProviderProfile? = null,
         agent3Provider: ProviderProfile? = null,
         subIndex: Int = 0,
+        parentChatId: String? = null,
     ): String {
         // The head (Agent 1) decides the work; sub-agent shards are routed to each sub's own
         // provider key. Even subIndex → Sub-Agent 1 (agent2), odd → Sub-Agent 2 (agent3).
@@ -4136,6 +4227,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val output = StringBuilder()
         val done = CompletableDeferred<String>()
         var sessionId: String? = null
+        // Sub-agent work is surfaced in the chat as a labelled task tree. Previously the
+        // shard collector swallowed everything except the final text, so two sub-agents
+        // could run correctly with zero visible progress and the UI looked hung.
+        val workerLabel = if (subIndex % 2 == 0) "Sub-Agent 1" else "Sub-Agent 2"
+        fun publishSubAgentActivity(item: ActivityItem) {
+            _state.update { current ->
+                if (current.activeChatId != parentChatId) return@update current
+                current.copy(
+                    liveProcess = current.liveProcess + item.copy(worker = workerLabel),
+                    liveThinking = false,
+                )
+            }
+        }
 
         val collector = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             runtime.events.collect { ev ->
@@ -4143,14 +4247,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     is RuntimeEvent.AssistantDelta -> {
                         if (ev.sessionId == sessionId) output.append(ev.text)
                     }
+                    is RuntimeEvent.SessionStarted -> {
+                        if (ev.sessionId == sessionId) {
+                            publishSubAgentActivity(ActivityItem("$workerLabel started", "Working on its assigned subtask", isComplete = false))
+                        }
+                    }
+                    is RuntimeEvent.ToolStarted -> {
+                        if (ev.sessionId == sessionId) {
+                            publishSubAgentActivity(ActivityItem("${ev.toolName} · $workerLabel", ev.detail, isComplete = false, isCommand = ev.toolName == "Bash"))
+                        }
+                    }
+                    is RuntimeEvent.ToolCompleted -> {
+                        if (ev.sessionId == sessionId) {
+                            publishSubAgentActivity(ActivityItem("${ev.toolName} · $workerLabel", ev.summary))
+                        }
+                    }
                     is RuntimeEvent.SessionCompleted -> {
-                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                        if (ev.sessionId == sessionId) {
+                            publishSubAgentActivity(ActivityItem("$workerLabel finished", "Sub-agent completed its subtask"))
+                            done.complete(output.toString())
+                        }
                     }
                     is RuntimeEvent.SessionFailed -> {
-                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                        if (ev.sessionId == sessionId) {
+                            publishSubAgentActivity(ActivityItem("$workerLabel failed", ev.reason))
+                            done.complete(output.toString())
+                        }
                     }
                     is RuntimeEvent.SessionStopped -> {
-                        if (ev.sessionId == sessionId) done.complete(output.toString())
+                        if (ev.sessionId == sessionId) {
+                            publishSubAgentActivity(ActivityItem("$workerLabel stopped", "Stopped"))
+                            done.complete(output.toString())
+                        }
                     }
                     else -> {}
                 }
@@ -4170,7 +4298,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 else -> null
             },
         )
-        sessionProjects[sessionId] = SessionOwner(projectId, null)
+        // The owning chat is recorded so shard events route like any other session. Shard
+        // deltas are consumed by the collector above and never reach the chat text; only
+        // the labelled activity items are published into the visible chat.
+        sessionProjects[sessionId] = SessionOwner(projectId, parentChatId)
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
         collector.cancel()
@@ -4233,30 +4364,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * V3: parses the LLM text response into [Decomposer.DecomposedChild] list.
      * Falls back to the default 2-way split if parsing fails.
      */
-    private fun parseLLMDecompose(raw: String): List<Decomposer.DecomposedChild> {
-        // Try JSON array parsing first.
+    /**
+     * Extracts the decomposition array from a model reply.
+     *
+     * The model was asked for a bare JSON array but routinely wraps it in prose or a
+     * fenced code block, so the array is located by its first `[` .. last `]` instead of
+     * requiring the whole reply to be JSON. Returns null when nothing parses so the caller
+     * can report the degradation rather than silently substituting a generic split.
+     */
+    private fun parseLLMDecompose(raw: String): List<Decomposer.DecomposedChild>? {
         val trimmed = raw.trim()
-        if (trimmed.startsWith("[")) {
-            try {
-                val result = mutableListOf<Decomposer.DecomposedChild>()
-                val content = trimmed.removePrefix("[").removeSuffix("]")
-                val items = content.split(Regex("""\},\s*\{"""))
-                for (item in items) {
-                    val clean = item.removePrefix("{").removeSuffix("}")
-                    val idMatch = Regex(""""id"\s*:\s*"([^"]+)"""").find(clean)
-                    val instrMatch = Regex(""""instruction"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(clean)
-                    if (idMatch != null && instrMatch != null) {
-                        result.add(Decomposer.DecomposedChild(idMatch.groupValues[1], instrMatch.groupValues[1]))
-                    }
-                }
-                if (result.isNotEmpty()) return result
-            } catch (_: Exception) { /* fall through */ }
+        if (trimmed.isBlank()) return null
+        val start = trimmed.indexOf('[')
+        val end = trimmed.lastIndexOf(']')
+        if (start < 0 || end <= start) return null
+
+        val arrayBody = trimmed.substring(start + 1, end)
+        val children = mutableListOf<Decomposer.DecomposedChild>()
+        // Match object spans rather than splitting on "},{": a string value containing
+        // that sequence would otherwise cut an entry in half and drop it.
+        for (match in DECOMPOSE_OBJECT.findAll(arrayBody)) {
+            val obj = match.value
+            val id = DECOMPOSE_ID.find(obj)?.groupValues?.get(1)?.trim()
+            val instruction = DECOMPOSE_INSTRUCTION.find(obj)?.groupValues?.get(1)?.trim()
+            if (!id.isNullOrBlank() && !instruction.isNullOrBlank()) {
+                children.add(Decomposer.DecomposedChild(id, instruction))
+            }
         }
-        // Fallback: default 2-way split (constructed inline — the decomposer is suspend).
-        return listOf(
-            Decomposer.DecomposedChild("ui", "Build/refactor the user-facing behavior and layout."),
-            Decomposer.DecomposedChild("backend", "Build/refactor the data, persistence, and backend wiring."),
-        )
+        return children.takeIf { it.isNotEmpty() }
     }
 
     companion object {
@@ -4275,6 +4410,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TEST_OPENROUTER_BASE_URL = "https://openrouter.ai/api"
         private const val TEST_OPENROUTER_MODEL = "stealth/ox-alpha"
         private val TASK_TIMEOUT = java.time.Duration.ofMinutes(5)
+
+        // Decomposition parsing. The object pattern is non-greedy and brace-free so a
+        // nested object cannot swallow the following entry. The id/instruction patterns
+        // accept single quotes and unquoted ids, which models emit despite being asked
+        // for strict JSON.
+        private val DECOMPOSE_OBJECT = Regex("""\{[^{}]*\}""")
+        private val DECOMPOSE_ID = Regex("""["']?id["']?\s*[:=]\s*["']?([^,"'}\s]+)["']?""")
+        private val DECOMPOSE_INSTRUCTION =
+            Regex("""["']?instruction["']?\s*[:=]\s*["']((?:[^"'\\]|\\.)*)["']""")
 
         // Key-vault scopes. Each agent role keeps its own per-provider pool so
         // reconfiguring one role never re-keys another (the vault is keyed by

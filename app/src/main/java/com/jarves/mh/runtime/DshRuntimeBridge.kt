@@ -684,6 +684,29 @@ class DshRuntimeBridge(
         }
     }
 
+    /**
+     * Truthful capability statement for the harness.
+     *
+     * The harness owns its own tool set (bash/read/write/edit/glob/grep) and exposes no
+     * delegation primitive. Without this the model pattern-matches Claude Code / OpenCode
+     * behaviour, *narrates* "launching two subagents now", and then stalls — the user sees
+     * a promise of fan-out followed by silence, because there is no tool behind the claim.
+     * Stating the boundary explicitly makes the model either do the work inline or ask the
+     * user to start an Agentic chat, which is a path that actually fans out.
+     */
+    private fun capabilitiesPrompt(projectKind: ProjectKind): String = buildString {
+        appendLine("<available_tools>")
+        appendLine("Your ONLY tools in this chat are: Bash (run shell commands), Read, Write, Edit, Glob, and Grep.")
+        appendLine("You have NO task/subagent/delegation tool. Do not claim you are spawning subagents, parallel workers, or background agents — nothing would run.")
+        appendLine("To fan work out across parallel agents, the user must start a new chat in Agentic mode from the mode picker. Say that plainly instead of pretending to delegate.")
+        appendLine("Do the work yourself with the tools above, splitting long work into several Bash/Write/Edit calls.")
+        if (projectKind == ProjectKind.QUICK_PROJECT) {
+            appendLine("This is a lightweight workspace: keep every command and file inside it.")
+        }
+        appendLine("</available_tools>")
+        appendLine()
+    }
+
     private fun buildContextPrompt(currentPrompt: String, history: List<ChatMessage>, guestWorkspacePath: String, projectKind: ProjectKind): String {
         val priorMessages = history
             .filter { msg ->
@@ -702,6 +725,7 @@ class DshRuntimeBridge(
             .dropLast(1)
 
         val sb = StringBuilder()
+        sb.append(capabilitiesPrompt(projectKind))
         sb.appendLine("<project_workspace>")
         if (projectKind == ProjectKind.QUICK_PROJECT) {
             sb.appendLine("This is a lightweight project workspace at $guestWorkspacePath.")
