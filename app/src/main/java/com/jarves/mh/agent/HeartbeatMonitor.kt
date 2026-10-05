@@ -46,6 +46,11 @@ class HeartbeatMonitor(
     }
 
     suspend fun checkHealth(agentId: AgentId, lastSeen: Long) {
+        // A retired agent is not merely unwatched by the ticker — it must stop counting
+        // as unhealthy even when a caller checks it directly. Without this guard retire()
+        // only hid the agent from [monitor], and a finished worker could still be
+        // reported as unresponsive.
+        if (agentId !in watched) return
         val timeSinceHeartbeat = System.currentTimeMillis() - lastSeen
         val failures = (timeSinceHeartbeat / intervalMs).toInt()
 
