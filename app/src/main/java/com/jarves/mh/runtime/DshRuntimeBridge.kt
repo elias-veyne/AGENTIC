@@ -168,12 +168,23 @@ class DshRuntimeBridge(
         @Volatile var lastForegroundProgressAt: Long = 0L
         @Volatile var foregroundResultPosted: Boolean = false
         @Volatile var lastThinkingUpdateAt: Long = 0L
+        /**
+         * True once this session hit the inactivity ceiling and was killed. Reported as a
+         * failure (never a user stop) so the UI explains itself instead of appearing to hang
+         * until the user gives up and taps stop.
+         */
+        @Volatile var timedOut: Boolean = false
+        /** Last time the harness produced bytes; drives the inactivity check. */
+        @Volatile var lastOutputAtElapsedRealtime: Long = android.os.SystemClock.elapsedRealtime()
     }
 
     private val sessions = ConcurrentHashMap<String, SessionState>()
 
-    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String?): String = withContext(Dispatchers.IO + NonCancellable) {
-        val sessionId = UUID.randomUUID().toString()
+    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String?, sessionId: String?): String = withContext(Dispatchers.IO + NonCancellable) {
+        // Honour a caller-supplied id. This function blocks until the run finishes, so an
+        // id learned from the return value could never match the events emitted during the
+        // run: every comparison would be made against null and silently fail.
+        val sessionId = sessionId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
         finishedSessions.remove(sessionId)
         val state = SessionState(
             projectSlug = projectSlug,
@@ -281,7 +292,16 @@ class DshRuntimeBridge(
                 )
             } else {
                 if (state.userStopRequested) throw DshSessionException("Stopped by user")
-                error(sdkResult.failure.ifBlank { "DeepSeek Harness stopped with exit code $exit" })
+                error(
+                    sdkResult.failure.ifBlank {
+                        if (state.timedOut) {
+                            "DeepSeek Harness stopped responding for " +
+                                "${SESSION_INACTIVITY_TIMEOUT_MS / 60_000} minutes and was stopped."
+                        } else {
+                            "DeepSeek Harness stopped with exit code $exit"
+                        }
+                    },
+                )
             }
         }.onFailure { error ->
             if (state.userStopRequested) {
@@ -434,6 +454,21 @@ class DshRuntimeBridge(
                 closeInput()
                 process.destroy()
             }
+            // Inactivity ceiling. Without this the loop's only exit was process death, so a
+            // dsh that stays alive but stops talking (stalled endpoint, unanswered request,
+            // unrecognised protocol frame) hung with zero terminal events and the UI spun
+            // forever. The one timer above is armed only after a running->idle status, which
+            // never arrives in that case, so this is the only bound on the wait.
+            if (process.isAlive && shutdownSentAt == 0L) {
+                val silentMs = android.os.SystemClock.elapsedRealtime() - state.lastOutputAtElapsedRealtime
+                if (silentMs >= SESSION_INACTIVITY_TIMEOUT_MS) {
+                    state.timedOut = true
+                    closeInput()
+                    process.destroy()
+                    if (process.isAlive) process.destroyForcibly()
+                    break
+                }
+            }
             val available = nativeProcess.outputFile.length() - outputOffset
             if (available <= 0) {
                 delay(50)
@@ -444,7 +479,13 @@ class DshRuntimeBridge(
                 file.seek(outputOffset)
                 file.read(bytes)
             }
-            if (count <= 0) continue
+            // count <= 0 with bytes still reported means no forward progress; yield so the
+            // loop cannot spin at 100% CPU waiting on the file to catch up.
+            if (count <= 0) {
+                delay(50)
+                continue
+            }
+            state.lastOutputAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
             outputOffset += count
             pendingBytes.write(bytes, 0, count)
 
@@ -866,6 +907,13 @@ class DshRuntimeBridge(
         private const val SDK_PROMPT_ID = 2
         private const val SDK_SHUTDOWN_ID = 3
         private const val SDK_SHUTDOWN_TIMEOUT_MS = 3_000L
+
+        /**
+         * How long a live harness may stay completely silent before the session is failed.
+         * A long turn legitimately produces no bytes for a while, so this must exceed normal
+         * think time; it exists to convert an unbounded hang into a reported error.
+         */
+        private const val SESSION_INACTIVITY_TIMEOUT_MS = 10 * 60_000L
         private val NEWLINE_BYTE: Byte = 0x0A
         private val HTTP_STATUS_CODE = Regex("\\b(?:401|403|429)\\b")
     }

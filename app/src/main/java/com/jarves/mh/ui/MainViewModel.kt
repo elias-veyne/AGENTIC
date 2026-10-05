@@ -3533,7 +3533,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         resolvedSecret = pinnedSecret,
                     )
                     activeRuntimeRequest?.let { request ->
-                        val sessionId = request.runtime.startSession(
+                        val sessionId = UUID.randomUUID().toString()
+                        sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
+                        request.runtime.startSession(
                             request.project.id,
                             request.project.slug,
                             request.project.kind,
@@ -3541,8 +3543,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             request.history,
                             request.provider,
                             request.resolvedSecret,
+                            sessionId = sessionId,
                         )
-                        sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
                     }
                     val integrated = cooperative.jointIntegration(AgentId.peer("ui"), AgentId.peer("backend"))
                     _state.update {
@@ -3568,7 +3570,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 viewModelScope.launch {
                     activeRuntimeRequest?.let { request ->
-                        val sessionId = request.runtime.startSession(
+                        // Register before starting: startSession returns only once the run is
+                        // over, so registering after it left every live event unowned, which
+                        // dead-coded the background path and leaked runningProjectIds entries.
+                        val sessionId = UUID.randomUUID().toString()
+                        sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
+                        request.runtime.startSession(
                             request.project.id,
                             request.project.slug,
                             request.project.kind,
@@ -3576,8 +3583,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             request.history,
                             request.provider,
                             request.resolvedSecret,
+                            sessionId = sessionId,
                         )
-                        sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
                     }
                 }
             }
@@ -3758,8 +3765,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _state.update { current ->
-            if (!current.isRunning) {
-                current
+            if (owner != null && !current.isRunning) {
+                // The owning chat is not the visible one and no task is showing as running.
+                // Do not silently discard the event: doing so left runningProjectIds entries
+                // that nothing ever cleared, which made a project permanently read-only and
+                // unreachable by stopTask(). Terminal events must always be honoured.
+                if (
+                    event is RuntimeEvent.SessionCompleted ||
+                    event is RuntimeEvent.SessionFailed ||
+                    event is RuntimeEvent.SessionStopped
+                ) {
+                    current.copy(
+                        runningProjectIds = current.runningProjectIds - owner.projectId,
+                        runningChatIds = current.runningChatIds - chatKey(owner.projectId, owner.chatId),
+                        agentSessions = current.agentSessions - event.sessionId,
+                    )
+                } else {
+                    current
+                }
             } else if (owner == null && current.agentSessions.isNotEmpty() && event.sessionId !in current.agentSessions.values) {
                 current
             } else when (event) {
@@ -3929,7 +3952,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         runningProjectIds = running,
                         runningChatIds = runningChats,
                         isRunning = activeChatKeyOf(current) in runningChats,
-                        agentSessions = emptyMap(),
+                        // Drop only THIS session. Clearing the whole map let one finishing
+                        // session orphan its siblings and made stopTask unable to reach them.
+                        agentSessions = current.agentSessions - event.sessionId,
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
@@ -3956,7 +3981,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         runningProjectIds = running,
                         runningChatIds = stoppedChats,
                         isRunning = activeChatKeyOf(current) in stoppedChats,
-                        agentSessions = emptyMap(),
+                        agentSessions = current.agentSessions - event.sessionId,
                         pendingApproval = null,
                         toastMessage = null,
                         activity = listOf(ActivityItem("Task stopped", "Stopped by user")) + current.activity,
@@ -3981,7 +4006,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         runningProjectIds = running,
                         runningChatIds = failedChats,
                         isRunning = activeChatKeyOf(current) in failedChats,
-                        agentSessions = emptyMap(),
+                        agentSessions = current.agentSessions - event.sessionId,
                         pendingApproval = null,
                         toastMessage = event.reason.takeIf { reason ->
                             reason.contains("user not found", true) ||
@@ -4100,7 +4125,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!vault.activate(request.provider.kind.name, next.id)) return false
         _state.update {
             it.copy(
-                agentSessions = emptyMap(),
+                // Retire only the session that failed; wiping the map orphaned every
+                // sibling session still running.
+                agentSessions = it.agentSessions - event.sessionId,
                 activeApiKeyName = next.name,
                 toastMessage = "${active.name} failed. Switched to ${next.name}.",
                 liveProcess = it.liveProcess + ActivityItem("API key switched", "Using ${next.name}", true),
@@ -4111,7 +4138,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // This is the key-failure retry: the vault's active key was just
             // switched above, so re-read it rather than reuse the request's
             // possibly-stale pinned secret.
-            val sessionId = request.runtime.startSession(
+            val retrySessionId = UUID.randomUUID().toString()
+            sessionProjects[retrySessionId] = SessionOwner(request.project.id, state.value.activeChatId)
+            request.runtime.startSession(
                 request.project.id,
                 request.project.slug,
                 request.project.kind,
@@ -4119,8 +4148,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 request.history,
                 request.provider,
                 resolvedSecret = vault.get(request.provider.kind.name),
+                sessionId = retrySessionId,
             )
-            sessionProjects[sessionId] = SessionOwner(request.project.id, state.value.activeChatId)
         }
         return true
     }
@@ -4226,7 +4255,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val output = StringBuilder()
         val done = CompletableDeferred<String>()
-        var sessionId: String? = null
+        // The id must exist BEFORE startSession is awaited. That call blocks until the run
+        // finishes, so an id learned from its return value could never match the events
+        // emitted during the run: `done` would never complete and `output` would stay empty,
+        // burning the full timeout and returning "".
+        val sessionId: String = UUID.randomUUID().toString()
+        // Register ownership up front as well, so shard events route to this chat while the
+        // shard is alive rather than landing after it has already been torn down.
+        sessionProjects[sessionId] = SessionOwner(projectId, parentChatId)
         // Sub-agent work is surfaced in the chat as a labelled task tree. Previously the
         // shard collector swallowed everything except the final text, so two sub-agents
         // could run correctly with zero visible progress and the UI looked hung.
@@ -4285,7 +4321,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        sessionId = runtime.startSession(
+        runtime.startSession(
             projectId,
             projectSlug,
             projectKind,
@@ -4297,11 +4333,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 agent3Provider -> vault.get(AGENT3_SCOPE, routedProvider.kind.name)
                 else -> null
             },
+            sessionId = sessionId,
         )
-        // The owning chat is recorded so shard events route like any other session. Shard
-        // deltas are consumed by the collector above and never reach the chat text; only
-        // the labelled activity items are published into the visible chat.
-        sessionProjects[sessionId] = SessionOwner(projectId, parentChatId)
+        // Shard deltas are consumed by the collector above and never reach the chat text;
+        // only the labelled activity items are published into the visible chat.
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
         collector.cancel()
@@ -4323,7 +4358,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): String {
         val output = StringBuilder()
         val done = CompletableDeferred<String>()
-        var sessionId: String? = null
+        // Same contract as runRealShard: the id is chosen here, before startSession blocks,
+        // so the decompose reply can actually be correlated with its own events.
+        val sessionId: String = UUID.randomUUID().toString()
+        sessionProjects[sessionId] = SessionOwner(projectId, state.value.activeChatId)
 
         val collector = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             runtime.events.collect { ev ->
@@ -4352,8 +4390,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             appendLine()
             appendLine("Request: $instruction")
         }
-        sessionId = runtime.startSession(projectId, projectSlug, projectKind, decomposePrompt, history, provider)
-        sessionProjects[sessionId] = SessionOwner(projectId, null)
+        runtime.startSession(
+            projectId,
+            projectSlug,
+            projectKind,
+            decomposePrompt,
+            history,
+            provider,
+            sessionId = sessionId,
+        )
 
         val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
         collector.cancel()
