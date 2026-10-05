@@ -3778,7 +3778,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     current.copy(
                         runningProjectIds = current.runningProjectIds - owner.projectId,
                         runningChatIds = current.runningChatIds - chatKey(owner.projectId, owner.chatId),
-                        agentSessions = current.agentSessions - event.sessionId,
+                        agentSessions = current.agentSessions.filterValues { it != event.sessionId },
                     )
                 } else {
                     current
@@ -3954,7 +3954,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isRunning = activeChatKeyOf(current) in runningChats,
                         // Drop only THIS session. Clearing the whole map let one finishing
                         // session orphan its siblings and made stopTask unable to reach them.
-                        agentSessions = current.agentSessions - event.sessionId,
+                        agentSessions = current.agentSessions.filterValues { it != event.sessionId },
                         activity = listOf(ActivityItem("Task completed", "${current.agentKind.title} finished successfully")) +
                             current.activity.map { if (!it.isComplete) it.copy(isComplete = true) else it },
                         taskFinishedAtMillis = finishedAt,
@@ -3981,7 +3981,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         runningProjectIds = running,
                         runningChatIds = stoppedChats,
                         isRunning = activeChatKeyOf(current) in stoppedChats,
-                        agentSessions = current.agentSessions - event.sessionId,
+                        agentSessions = current.agentSessions.filterValues { it != event.sessionId },
                         pendingApproval = null,
                         toastMessage = null,
                         activity = listOf(ActivityItem("Task stopped", "Stopped by user")) + current.activity,
@@ -4006,7 +4006,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         runningProjectIds = running,
                         runningChatIds = failedChats,
                         isRunning = activeChatKeyOf(current) in failedChats,
-                        agentSessions = current.agentSessions - event.sessionId,
+                        agentSessions = current.agentSessions.filterValues { it != event.sessionId },
                         pendingApproval = null,
                         toastMessage = event.reason.takeIf { reason ->
                             reason.contains("user not found", true) ||
