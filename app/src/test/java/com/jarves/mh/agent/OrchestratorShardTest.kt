@@ -11,9 +11,10 @@ class OrchestratorShardTest {
     private fun orchestrator(retries: Int = 0) =
         Orchestrator(MessageBus(), SharedStateStore(), SystemConfig(maxTaskRetries = retries))
 
-    @Test
-    fun `assign spreads shards round-robin across workers`() {
+@Test
+fun `assign spreads shards round-robin across workers`() = runBlocking {
         val orchestrator = orchestrator()
+        // decompose is suspend: the orchestration API is coroutine-first.
         val subtasks = orchestrator.decompose("t1", "build the thing")
         val assigned = orchestrator.assign(subtasks, listOf(AgentId.worker("a"), AgentId.worker("b")))
 
