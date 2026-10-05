@@ -348,6 +348,10 @@ class DshRuntimeBridge(
         var sawRunning = false
         var completed = false
         var sawActivity = false
+        // Wall-clock of the last turn/end frame. A finished turn with no following
+        // status transition leaves the process alive with nothing more to do; without a
+        // bound the session only ended when the process died on its own (or never).
+        var lastTurnEndAt = 0L
         var shutdownSent = false
         var shutdownSentAt = 0L
         var inputClosed = false
@@ -415,6 +419,7 @@ class DshRuntimeBridge(
                 }
                 is DshSdkProtocolEvent.Reasoning -> {
                     sawActivity = true
+                    lastTurnEndAt = 0L
                     emitReasoningSummary(
                         sessionId = sessionId,
                         text = protocolEvent.text,
@@ -426,6 +431,7 @@ class DshRuntimeBridge(
                 }
                 is DshSdkProtocolEvent.ToolStarted -> {
                     sawActivity = true
+                    lastTurnEndAt = 0L
                     eventBus.emit(
                         RuntimeEvent.ToolStarted(sessionId, protocolEvent.name, protocolEvent.detail),
                     )
@@ -438,10 +444,14 @@ class DshRuntimeBridge(
                 }
                 is DshSdkProtocolEvent.AssistantText -> if (protocolEvent.text.isNotEmpty()) {
                     sawActivity = true
+                    lastTurnEndAt = 0L
                     eventBus.emit(RuntimeEvent.AssistantDelta(sessionId, protocolEvent.text))
                 }
                 is DshSdkProtocolEvent.Failed -> failure = protocolEvent.message
-                DshSdkProtocolEvent.TurnCompleted -> sawActivity = true
+                DshSdkProtocolEvent.TurnCompleted -> {
+                    sawActivity = true
+                    lastTurnEndAt = android.os.SystemClock.elapsedRealtime()
+                }
                 DshSdkProtocolEvent.ShutdownAcknowledged -> closeInput()
                 DshSdkProtocolEvent.Ignored -> Unit
             }
@@ -461,6 +471,16 @@ class DshRuntimeBridge(
             // unrecognised protocol frame) hung with zero terminal events and the UI spun
             // forever. The one timer above is armed only after a running->idle status, which
             // never arrives in that case, so this is the only bound on the wait.
+            // A completed turn that never transitions to idle: give the harness a grace
+            // window for trailing frames, then shut the session down ourselves instead of
+            // waiting on a status event that is never going to arrive.
+            if (process.isAlive && !shutdownSent && lastTurnEndAt > 0L &&
+                android.os.SystemClock.elapsedRealtime() - lastTurnEndAt >= TURN_END_GRACE_MS
+            ) {
+                shutdownSent = true
+                shutdownSentAt = android.os.SystemClock.elapsedRealtime()
+                if (process.isAlive) send("shutdown", SDK_SHUTDOWN_ID)
+            }
             if (process.isAlive && shutdownSentAt == 0L) {
                 val silentMs = android.os.SystemClock.elapsedRealtime() - state.lastOutputAtElapsedRealtime
                 if (silentMs >= SESSION_INACTIVITY_TIMEOUT_MS) {
@@ -909,6 +929,14 @@ class DshRuntimeBridge(
         private const val SDK_PROMPT_ID = 2
         private const val SDK_SHUTDOWN_ID = 3
         private const val SDK_SHUTDOWN_TIMEOUT_MS = 3_000L
+
+        /**
+         * Quiet period after a turn/end before the session is shut down on the harness's
+         * behalf. Must comfortably exceed normal inter-frame gaps (a slow endpoint can
+         * pause between the last delta and its status), but a turn that stays quiet this
+         * long is over — keeping the spinner alive past this point is the hang.
+         */
+        private const val TURN_END_GRACE_MS = 90_000L
 
         /**
          * How long a live harness may stay completely silent before the session is failed.
