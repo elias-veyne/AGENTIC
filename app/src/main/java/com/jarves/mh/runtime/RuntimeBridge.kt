@@ -10,7 +10,21 @@ import kotlinx.coroutines.flow.Flow
 
 interface RuntimeBridge {
     val events: Flow<RuntimeEvent>
-    suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String? = null): String    suspend fun respondToApproval(request: ToolRequest, approved: Boolean)
+
+    /**
+     * Runs one agent session to completion and returns its id.
+     *
+     * This does NOT return as soon as the session begins — it awaits the whole run. A
+     * caller that needs to correlate the returned id with the events emitted *during*
+     * that run must therefore pass [sessionId] itself; otherwise the id only becomes
+     * available after the last event, and every correlation against it silently fails.
+     *
+     * @param sessionId caller-chosen id to use instead of a fresh UUID. Supply this when
+     *   the caller must match `RuntimeEvent`s to this session while it is still running.
+     */
+    suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String? = null, sessionId: String? = null): String
+
+    suspend fun respondToApproval(request: ToolRequest, approved: Boolean)
     suspend fun stopSession(sessionId: String)
     suspend fun stopActiveSession()
     suspend fun undoLastChanges(projectId: String): Boolean

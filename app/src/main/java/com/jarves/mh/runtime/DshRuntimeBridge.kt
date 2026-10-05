@@ -168,12 +168,23 @@ class DshRuntimeBridge(
         @Volatile var lastForegroundProgressAt: Long = 0L
         @Volatile var foregroundResultPosted: Boolean = false
         @Volatile var lastThinkingUpdateAt: Long = 0L
+        /**
+         * True once this session hit the inactivity ceiling and was killed. Reported as a
+         * failure (never a user stop) so the UI explains itself instead of appearing to hang
+         * until the user gives up and taps stop.
+         */
+        @Volatile var timedOut: Boolean = false
+        /** Last time the harness produced bytes; drives the inactivity check. */
+        @Volatile var lastOutputAtElapsedRealtime: Long = android.os.SystemClock.elapsedRealtime()
     }
 
     private val sessions = ConcurrentHashMap<String, SessionState>()
 
-    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String?): String = withContext(Dispatchers.IO + NonCancellable) {
-        val sessionId = UUID.randomUUID().toString()
+    override suspend fun startSession(projectId: String, projectSlug: String, projectKind: ProjectKind, prompt: String, conversationHistory: List<ChatMessage>, provider: ProviderProfile, resolvedSecret: String?, sessionId: String?): String = withContext(Dispatchers.IO + NonCancellable) {
+        // Honour a caller-supplied id. This function blocks until the run finishes, so an
+        // id learned from the return value could never match the events emitted during the
+        // run: every comparison would be made against null and silently fail.
+        val sessionId = sessionId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
         finishedSessions.remove(sessionId)
         val state = SessionState(
             projectSlug = projectSlug,
@@ -255,6 +266,7 @@ class DshRuntimeBridge(
             val sdkResult = runSdkSession(
                 process = process,
                 sessionId = sessionId,
+                state = state,
                 route = route,
                 model = provider.model.ifBlank { route.defaultModel },
                 guestWorkspacePath = guestWorkspacePath,
@@ -281,7 +293,16 @@ class DshRuntimeBridge(
                 )
             } else {
                 if (state.userStopRequested) throw DshSessionException("Stopped by user")
-                error(sdkResult.failure.ifBlank { "DeepSeek Harness stopped with exit code $exit" })
+                error(
+                    sdkResult.failure.ifBlank {
+                        if (state.timedOut) {
+                            "DeepSeek Harness stopped responding for " +
+                                "${SESSION_INACTIVITY_TIMEOUT_MS / 60_000} minutes and was stopped."
+                        } else {
+                            "DeepSeek Harness stopped with exit code $exit"
+                        }
+                    },
+                )
             }
         }.onFailure { error ->
             if (state.userStopRequested) {
@@ -306,6 +327,7 @@ class DshRuntimeBridge(
     private suspend fun runSdkSession(
         process: Process,
         sessionId: String,
+        state: SessionState,
         route: DshRoute,
         model: String,
         guestWorkspacePath: String,
@@ -434,6 +456,21 @@ class DshRuntimeBridge(
                 closeInput()
                 process.destroy()
             }
+            // Inactivity ceiling. Without this the loop's only exit was process death, so a
+            // dsh that stays alive but stops talking (stalled endpoint, unanswered request,
+            // unrecognised protocol frame) hung with zero terminal events and the UI spun
+            // forever. The one timer above is armed only after a running->idle status, which
+            // never arrives in that case, so this is the only bound on the wait.
+            if (process.isAlive && shutdownSentAt == 0L) {
+                val silentMs = android.os.SystemClock.elapsedRealtime() - state.lastOutputAtElapsedRealtime
+                if (silentMs >= SESSION_INACTIVITY_TIMEOUT_MS) {
+                    state.timedOut = true
+                    closeInput()
+                    process.destroy()
+                    if (process.isAlive) process.destroyForcibly()
+                    break
+                }
+            }
             val available = nativeProcess.outputFile.length() - outputOffset
             if (available <= 0) {
                 delay(50)
@@ -444,7 +481,13 @@ class DshRuntimeBridge(
                 file.seek(outputOffset)
                 file.read(bytes)
             }
-            if (count <= 0) continue
+            // count <= 0 with bytes still reported means no forward progress; yield so the
+            // loop cannot spin at 100% CPU waiting on the file to catch up.
+            if (count <= 0) {
+                delay(50)
+                continue
+            }
+            state.lastOutputAtElapsedRealtime = android.os.SystemClock.elapsedRealtime()
             outputOffset += count
             pendingBytes.write(bytes, 0, count)
 
@@ -684,6 +727,29 @@ class DshRuntimeBridge(
         }
     }
 
+    /**
+     * Truthful capability statement for the harness.
+     *
+     * The harness owns its own tool set (bash/read/write/edit/glob/grep) and exposes no
+     * delegation primitive. Without this the model pattern-matches Claude Code / OpenCode
+     * behaviour, *narrates* "launching two subagents now", and then stalls — the user sees
+     * a promise of fan-out followed by silence, because there is no tool behind the claim.
+     * Stating the boundary explicitly makes the model either do the work inline or ask the
+     * user to start an Agentic chat, which is a path that actually fans out.
+     */
+    private fun capabilitiesPrompt(projectKind: ProjectKind): String = buildString {
+        appendLine("<available_tools>")
+        appendLine("Your ONLY tools in this chat are: Bash (run shell commands), Read, Write, Edit, Glob, and Grep.")
+        appendLine("You have NO task/subagent/delegation tool. Do not claim you are spawning subagents, parallel workers, or background agents — nothing would run.")
+        appendLine("To fan work out across parallel agents, the user must start a new chat in Agentic mode from the mode picker. Say that plainly instead of pretending to delegate.")
+        appendLine("Do the work yourself with the tools above, splitting long work into several Bash/Write/Edit calls.")
+        if (projectKind == ProjectKind.QUICK_PROJECT) {
+            appendLine("This is a lightweight workspace: keep every command and file inside it.")
+        }
+        appendLine("</available_tools>")
+        appendLine()
+    }
+
     private fun buildContextPrompt(currentPrompt: String, history: List<ChatMessage>, guestWorkspacePath: String, projectKind: ProjectKind): String {
         val priorMessages = history
             .filter { msg ->
@@ -702,6 +768,7 @@ class DshRuntimeBridge(
             .dropLast(1)
 
         val sb = StringBuilder()
+        sb.append(capabilitiesPrompt(projectKind))
         sb.appendLine("<project_workspace>")
         if (projectKind == ProjectKind.QUICK_PROJECT) {
             sb.appendLine("This is a lightweight project workspace at $guestWorkspacePath.")
@@ -842,6 +909,13 @@ class DshRuntimeBridge(
         private const val SDK_PROMPT_ID = 2
         private const val SDK_SHUTDOWN_ID = 3
         private const val SDK_SHUTDOWN_TIMEOUT_MS = 3_000L
+
+        /**
+         * How long a live harness may stay completely silent before the session is failed.
+         * A long turn legitimately produces no bytes for a while, so this must exceed normal
+         * think time; it exists to convert an unbounded hang into a reported error.
+         */
+        private const val SESSION_INACTIVITY_TIMEOUT_MS = 10 * 60_000L
         private val NEWLINE_BYTE: Byte = 0x0A
         private val HTTP_STATUS_CODE = Regex("\\b(?:401|403|429)\\b")
     }
