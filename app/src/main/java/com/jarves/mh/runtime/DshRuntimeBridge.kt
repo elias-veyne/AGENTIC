@@ -266,6 +266,7 @@ class DshRuntimeBridge(
             val sdkResult = runSdkSession(
                 process = process,
                 sessionId = sessionId,
+                state = state,
                 route = route,
                 model = provider.model.ifBlank { route.defaultModel },
                 guestWorkspacePath = guestWorkspacePath,
@@ -326,6 +327,7 @@ class DshRuntimeBridge(
     private suspend fun runSdkSession(
         process: Process,
         sessionId: String,
+        state: SessionState,
         route: DshRoute,
         model: String,
         guestWorkspacePath: String,
