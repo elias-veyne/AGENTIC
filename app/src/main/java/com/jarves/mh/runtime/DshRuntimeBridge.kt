@@ -1166,19 +1166,11 @@ internal class DshSdkProtocolParser(private val expectedSessionId: String) {
                 val incoming = chunk.optString("text")
                 if (incoming.isEmpty()) return DshSdkProtocolEvent.Ignored
                 buffer.append(incoming)
-                // Emit ONLY what is new. Previously this emitted buffer.toString() — the whole
-                // block re-sent on every delta — while the UI APPENDED each event to the live
-                // Think block. The result was the exact repetition in the screenshots: the
-                // first delta's text appeared once per subsequent delta, so "user wants me to"
-                // grew into the same phrase repeated a dozen times. On a transport retry the
-                // buffer also survived, re-injecting an entire earlier block, which is what
-                // interleaved two copies of the same sentence at different offsets.
-                //
-                // A repeated delta that does not extend the buffer (a replay after retry) is
-                // dropped instead of duplicated.
-                val incremental = if (buffer.toString().startsWith(incoming) && !starts) "" else incoming
-                if (incremental.isEmpty()) return DshSdkProtocolEvent.Ignored
-                DshSdkProtocolEvent.Reasoning(blockId, incremental, starts, isFinal = false)
+                // Emit ONLY the new text. This branch previously emitted buffer.toString() —
+                // the whole block re-sent on every delta — while the UI APPENDED each event to
+                // the live Think block. The first delta's text was therefore rendered once per
+                // later delta, which is the repetition in the screenshots.
+                DshSdkProtocolEvent.Reasoning(blockId, incoming, starts, isFinal = false)
             }
             "block-end" -> {
                 val block = chunk.optJSONObject("block")
@@ -1195,14 +1187,26 @@ internal class DshSdkProtocolParser(private val expectedSessionId: String) {
                 val streamed = reasoningByBlock.remove(blockId)?.toString().orEmpty()
                 val starts = streamed.isEmpty()
                 // Emit only the suffix the deltas never delivered. Emitting the full text
-                // here re-appended the entire block on top of what the UI already had.
-                val text = if (complete.isNotBlank() && complete.startsWith(streamed)) {
+                // here re-appended the whole block on top of what the UI already held.
+                val suffix = if (complete.isNotBlank() && complete.startsWith(streamed)) {
                     complete.removePrefix(streamed)
+                } else if (complete.isBlank()) {
+                    ""
                 } else {
-                    complete.ifBlank { streamed }
+                    // The block text disagrees with what was streamed (a retry rewrote it).
+                    // Drop it rather than re-injecting an already-seen copy.
+                    ""
                 }
-                if (text.isBlank()) DshSdkProtocolEvent.Ignored
-                else DshSdkProtocolEvent.Reasoning(blockId, text, starts, isFinal = true)
+                // A final marker is required even when the suffix is empty, otherwise the UI
+                // never marks the Think block complete and it stays "live" forever.
+                if (suffix.isBlank() && complete.isNotBlank()) {
+                    // Nothing new AND the whole block was already delivered -> still close it.
+                    DshSdkProtocolEvent.Reasoning(blockId, "", startsNewBlock = false, isFinal = true)
+                } else if (suffix.isBlank() && complete.isBlank() && streamed.isBlank()) {
+                    DshSdkProtocolEvent.Ignored
+                } else {
+                    DshSdkProtocolEvent.Reasoning(blockId, suffix, starts, isFinal = true)
+                }
             }
             else -> DshSdkProtocolEvent.Ignored
         }

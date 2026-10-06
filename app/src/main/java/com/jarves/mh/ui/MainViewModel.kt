@@ -3838,12 +3838,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             process += ActivityItem("Think", initial, event.isFinal)
                         }
-                    } else if (current.activeThinkingBlockId == event.blockId && existingIndex >= 0 && summary.isNotBlank()) {
+                    } else if (current.activeThinkingBlockId == event.blockId && existingIndex >= 0) {
                         // ReasoningSummary now carries only the INCREMENT (the bridge stopped
                         // re-sending the whole block on every delta, which duplicated text).
-                        // It must therefore be appended here, not assigned.
+                        // It must therefore be appended here, not assigned. An empty summary is
+                        // still meaningful when isFinal: it closes the block without adding text.
                         val existing = process[existingIndex].detail
-                        val merged = if (existing.contains(summary)) existing else existing + summary
+                        val merged = when {
+                            summary.isBlank() -> existing
+                            existing.contains(summary) -> existing
+                            else -> existing + summary
+                        }
                         process[existingIndex] = process[existingIndex].copy(
                             detail = merged,
                             isComplete = event.isFinal,

@@ -83,13 +83,38 @@ class DshReasoningDeltaTest {
     }
 
     @Test
-    fun `a replayed delta after block-end is not re-emitted`() {
+    fun `reasoning deltas and a final suffix concatenate to the full block`() {
         val parser = DshSdkProtocolParser("s")
+        val sb = StringBuilder()
+        listOf("Let me ", "read ", "the logs").forEach {
+            sb.append((parser.parseLine(delta(1, 0, 0, it)) as DshSdkProtocolEvent.Reasoning).text)
+        }
+        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "Let me read the logs.")) as DshSdkProtocolEvent.Reasoning
+        sb.append(end.text)
+        assertEquals("Let me read the logs.", sb.toString())
+    }
+
+    @Test
+    fun `block-end with nothing new still closes the block`() {
+        val parser = DshSdkProtocolParser("s")
+        parser.parseLine(delta(1, 0, 0, "all "))
         parser.parseLine(delta(1, 0, 0, "done"))
-        parser.parseLine(blockEndReasoning(1, 0, 0, "done"))
-        // Same blockId reused by a retry: the buffer was cleared, so this opens a new
-        // block rather than silently duplicating "done" into the old one.
-        val replay = parser.parseLine(delta(1, 0, 0, "done")) as DshSdkProtocolEvent.Reasoning
-        assertEquals("done", replay.text)
+        // The deltas already delivered the entire block text, so there is no suffix left.
+        // A final marker must still be emitted or the UI leaves the Think block live forever.
+        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "all done")) as DshSdkProtocolEvent.Reasoning
+        assertEquals("", end.text)
+        assertTrue(end.isFinal)
+        assertEquals(false, end.startsNewBlock)
+    }
+
+    @Test
+    fun `a rewritten block after a retry is dropped rather than re-injected`() {
+        val parser = DshSdkProtocolParser("s")
+        parser.parseLine(delta(1, 0, 0, "original text"))
+        // The block now reports text that does NOT extend what was streamed (a retry
+        // rewrote it). Emitting it would splice a second copy into the UI.
+        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "completely different")) as DshSdkProtocolEvent.Reasoning
+        assertEquals("", end.text)
+        assertTrue(end.isFinal)
     }
 }
