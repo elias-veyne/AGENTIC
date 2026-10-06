@@ -1,0 +1,44 @@
+name: Mirror Android bundle (one-shot)
+
+# One-shot utility: copies pocketdev-android-arm64-2026.09.1.tar.zst from the
+# upstream Mobile-Harness runtime release into this fork's runtime-2026.09.4
+# release, so the online flavor can download the Android toolchain on demand.
+# The file is ~570 MB with a pinned SHA-256 the app verifies at install time,
+# so the copy is checksummed here before upload. Delete this workflow (and its
+# branch) after a successful run — it is not part of the build.
+#
+# Run with: gh workflow run mirror-android-bundle --ref chore/mirror-android-bundle
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Download bundle from upstream release
+        run: |
+          set -euo pipefail
+          curl -sSL -o android.tar.zst \
+            https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4/pocketdev-android-arm64-2026.09.1.tar.zst
+          ls -la android.tar.zst
+
+      - name: Verify size and SHA-256
+        run: |
+          set -euo pipefail
+          test "$(stat -c%s android.tar.zst)" = "569652007"
+          echo "01bea058ebcb17416d1eb08c0211b3782da3228eb3c8348eb3719f2d61dd3ec6  android.tar.zst" | sha256sum -c -
+
+      - name: Upload to fork runtime release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp android.tar.zst pocketdev-android-arm64-2026.09.1.tar.zst
+          gh release upload runtime-2026.09.4 \
+            pocketdev-android-arm64-2026.09.1.tar.zst --clobber
+          gh release view runtime-2026.09.4 \
+            --json assets --jq '.assets[] | "\(.name) \(.size)"'
