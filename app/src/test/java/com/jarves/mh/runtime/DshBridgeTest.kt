@@ -67,8 +67,10 @@ class DshSdkProtocolParserTest {
         )
 
         assertTrue(first is DshSdkProtocolEvent.Reasoning && first.startsNewBlock && first.text == "Checking ")
-        assertTrue(second is DshSdkProtocolEvent.Reasoning && !second.startsNewBlock && second.text == "Checking files")
-        assertTrue(end is DshSdkProtocolEvent.Reasoning && end.isFinal && end.text == "Checking files")
+        assertTrue(second is DshSdkProtocolEvent.Reasoning && !second.startsNewBlock && second.text == "files")
+        // The deltas already delivered the whole block, so block-end has no new text to
+        // send — but it must still mark the block final so the UI closes it.
+        assertTrue(end is DshSdkProtocolEvent.Reasoning && end.isFinal && end.text.isEmpty())
     }
 
     @Test

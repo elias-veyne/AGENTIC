@@ -426,7 +426,6 @@ class DshRuntimeBridge(
                         blockId = protocolEvent.blockId,
                         startsNewBlock = protocolEvent.startsNewBlock,
                         isFinal = protocolEvent.isFinal,
-                        force = protocolEvent.startsNewBlock || protocolEvent.isFinal,
                     )
                 }
                 is DshSdkProtocolEvent.ToolStarted -> {
@@ -665,25 +664,25 @@ class DshRuntimeBridge(
         blockId: Long,
         startsNewBlock: Boolean,
         isFinal: Boolean,
-        force: Boolean = false,
     ) {
         val summary = text.replace(Regex("\\s+"), " ").trim().take(2_000)
         if (summary.isBlank()) return
-        val now = android.os.SystemClock.elapsedRealtime()
         val state = sessions[sessionId] ?: return
-        if (force || now - state.lastThinkingUpdateAt >= 400) {
-            state.lastThinkingUpdateAt = now
-            eventBus.emit(
-                RuntimeEvent.ReasoningSummary(
-                    sessionId = sessionId,
-                    summary = summary,
-                    blockId = blockId,
-                    startsNewBlock = startsNewBlock,
-                    isFinal = isFinal,
-                ),
-            )
-            pushForegroundProgress(sessionId, "Thinking…")
-        }
+        state.lastThinkingUpdateAt = android.os.SystemClock.elapsedRealtime()
+        // No throttle. Reasoning deltas are increments that the UI appends, so dropping one
+        // silently truncates the block; the previous 400 ms gate dropped most of them. The
+        // foreground-notification throttle (pushForegroundProgress) still rate-limits the
+        // visible notification, which is what actually needed limiting.
+        eventBus.emit(
+            RuntimeEvent.ReasoningSummary(
+                sessionId = sessionId,
+                summary = summary,
+                blockId = blockId,
+                startsNewBlock = startsNewBlock,
+                isFinal = isFinal,
+            ),
+        )
+        pushForegroundProgress(sessionId, "Thinking…")
     }
 
     private suspend fun emitCompletedOnce(sessionId: String) {
@@ -1129,6 +1128,12 @@ internal class DshSdkProtocolParser(private val expectedSessionId: String) {
                 DshSdkProtocolEvent.ToolCompleted(callId, name, summary)
             }
             "turn/end" -> {
+                // The dedup accumulator is per-message. Carrying it across turns made it
+                // suppress the *next* turn's assistant/message, and its size grew for the
+                // whole session (AUDIT_FINDINGS residual S7).
+                streamedTextSinceMessage.setLength(0)
+                textByBlock.clear()
+                reasoningByBlock.clear()
                 val reason = data.optJSONObject("reason")
                 when (reason?.optString("kind")) {
                     "error" -> DshSdkProtocolEvent.Failed(
@@ -1158,8 +1163,14 @@ internal class DshSdkProtocolParser(private val expectedSessionId: String) {
             "reasoning-delta" -> {
                 val buffer = reasoningByBlock.getOrPut(blockId) { StringBuilder() }
                 val starts = buffer.isEmpty()
-                buffer.append(chunk.optString("text"))
-                DshSdkProtocolEvent.Reasoning(blockId, buffer.toString(), starts, isFinal = false)
+                val incoming = chunk.optString("text")
+                if (incoming.isEmpty()) return DshSdkProtocolEvent.Ignored
+                buffer.append(incoming)
+                // Emit ONLY the new text. This branch previously emitted buffer.toString() —
+                // the whole block re-sent on every delta — while the UI APPENDED each event to
+                // the live Think block. The first delta's text was therefore rendered once per
+                // later delta, which is the repetition in the screenshots.
+                DshSdkProtocolEvent.Reasoning(blockId, incoming, starts, isFinal = false)
             }
             "block-end" -> {
                 val block = chunk.optJSONObject("block")
@@ -1172,11 +1183,30 @@ internal class DshSdkProtocolParser(private val expectedSessionId: String) {
                     return DshSdkProtocolEvent.AssistantText(missingSuffix)
                 }
                 if (block?.optString("type") != "reasoning") return DshSdkProtocolEvent.Ignored
-                val text = block.optString("text").ifBlank { reasoningByBlock[blockId]?.toString().orEmpty() }
-                val starts = blockId !in reasoningByBlock
-                reasoningByBlock.remove(blockId)
-                if (text.isBlank()) DshSdkProtocolEvent.Ignored
-                else DshSdkProtocolEvent.Reasoning(blockId, text, starts, isFinal = true)
+                val complete = block.optString("text")
+                val streamed = reasoningByBlock.remove(blockId)?.toString().orEmpty()
+                val starts = streamed.isEmpty()
+                // Emit only the suffix the deltas never delivered. Emitting the full text
+                // here re-appended the whole block on top of what the UI already held.
+                val suffix = if (complete.isNotBlank() && complete.startsWith(streamed)) {
+                    complete.removePrefix(streamed)
+                } else if (complete.isBlank()) {
+                    ""
+                } else {
+                    // The block text disagrees with what was streamed (a retry rewrote it).
+                    // Drop it rather than re-injecting an already-seen copy.
+                    ""
+                }
+                // A final marker is required even when the suffix is empty, otherwise the UI
+                // never marks the Think block complete and it stays "live" forever.
+                if (suffix.isBlank() && complete.isNotBlank()) {
+                    // Nothing new AND the whole block was already delivered -> still close it.
+                    DshSdkProtocolEvent.Reasoning(blockId, "", startsNewBlock = false, isFinal = true)
+                } else if (suffix.isBlank() && complete.isBlank() && streamed.isBlank()) {
+                    DshSdkProtocolEvent.Ignored
+                } else {
+                    DshSdkProtocolEvent.Reasoning(blockId, suffix, starts, isFinal = true)
+                }
             }
             else -> DshSdkProtocolEvent.Ignored
         }
