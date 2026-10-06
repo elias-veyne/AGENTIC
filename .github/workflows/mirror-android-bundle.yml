@@ -19,6 +19,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download bundle from upstream release
         run: |
           set -euo pipefail
