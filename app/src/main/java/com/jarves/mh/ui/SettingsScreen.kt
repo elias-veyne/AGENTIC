@@ -230,12 +230,9 @@ import androidx.compose.material.icons.filled.Link
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(12.dp))
-                        // Online builds cannot install the ~570 MB Android toolchain; only the
-                        // offline flavor bundles it. Hide it here so the list matches what the
-                        // runtime will actually allow.
-                        val stacks = DevStack.entries.filter {
-                            BuildConfig.OFFLINE_RUNTIME_BUNDLES || it != DevStack.ANDROID
-                        }
+                        // Every stack is installable here; the online flavor downloads the
+                        // bundle on demand.
+                        val stacks = DevStack.entries
                         stacks.forEachIndexed { index, stack ->
                             val installed = stack in state.installedDevStacks
                             val installing = state.devStackInstalling == stack

@@ -805,11 +805,8 @@ class DshRuntimeBridge(
             sb.appendLine("The bundled Maven cache handles the base toolchain; Gradle may download project-specific libraries normally. Set android.useAndroidX=true for AndroidX or Compose projects.")
             sb.appendLine("PocketDev globally configures Gradle to use the SDK's ARM64 aapt2. Do not use the x86_64 Maven aapt2, investigate its architecture, or add android.aapt2FromMavenOverride to the project.")
             sb.appendLine("Use the installed `gradle` command for Android builds; do not ask the user to install Android Studio, an SDK, Gradle, ADB, or Termux.")
-        } else if (com.jarves.mh.BuildConfig.OFFLINE_RUNTIME_BUNDLES) {
-            sb.appendLine("The optional Android build toolchain is not installed in this PocketDev runtime. You may create Android project files, but do not claim that Gradle, the Android SDK, or aapt2 is available and do not present build or install commands as verified. Tell the user to add the Android development stack in PocketDev Settings before building.")
         } else {
-            sb.appendLine("This online build ships without the Android toolchain — it is ~570 MB and on-device builds are rarely the point. You may create and edit Android project files, but do not claim that Gradle, the Android SDK, aapt2, or any on-device build is available, and never present a local build or install command as verified.")
-            sb.appendLine("To produce an APK, write a GitHub Actions workflow that builds and signs the release, commit it, and let CI produce the artifact the user can then download and install. Say clearly that the build happens on CI, not on this phone.")
+            sb.appendLine("The optional Android build toolchain is not installed in this PocketDev runtime. You may create Android project files, but do not claim that Gradle, the Android SDK, or aapt2 is available and do not present build or install commands as verified. Tell the user to add the Android development stack in PocketDev Settings before building.")
         }
         sb.appendLine("For local servers, give a clear start command and never use a kill command that searches its own command text with pgrep, because it can terminate the terminal itself.")
         // The model's training data lags reality; ground it in the real date and
