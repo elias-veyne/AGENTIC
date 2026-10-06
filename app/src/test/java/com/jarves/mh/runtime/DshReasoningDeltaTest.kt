@@ -1,5 +1,6 @@
 package com.jarves.mh.runtime
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,25 +11,45 @@ import org.junit.Test
  *
  * The bridge re-sent the ENTIRE accumulated reasoning block on every delta while
  * the UI appended each event, so the first delta's text appeared once per later
- * delta. These tests pin the contract the UI now relies on: a reasoning delta
+ * delta. These tests pin the contract the UI relies on: a reasoning delta
  * carries only what is NEW.
  */
 class DshReasoningDeltaTest {
 
-    private fun line(json: String) = json.trim()
+    private fun chunkEvent(turn: Int, step: Int, chunk: JSONObject) = JSONObject()
+        .put("method", "session.event")
+        .put(
+            "params",
+            JSONObject().put("sessionId", "s").put(
+                "event",
+                JSONObject()
+                    .put("type", "assistant/chunk")
+                    .put("seq", step)
+                    .put("time", 0)
+                    .put(
+                        "data",
+                        JSONObject().put("turn", turn).put("step", step).put("chunk", chunk),
+                    ),
+            ),
+        )
+        .toString()
 
-    private fun delta(turn: Int, step: Int, index: Int, text: String) = line(
-        """{"method":"session.event","params":{"sessionId":"s","event":{"type":"assistant/chunk",
-        "data":{"turn":$turn,"step":$step,"chunk":{"index":$index,"type":"reasoning-delta",
-        "text":${q(text)}}}}}}""",
+    private fun delta(turn: Int, step: Int, index: Int, text: String) = chunkEvent(
+        turn,
+        step,
+        JSONObject()
+            .put("type", "reasoning-delta")
+            .put("index", index)
+            .put("text", text),
     )
 
-    private fun q(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-
-    private fun blockEndReasoning(turn: Int, step: Int, index: Int, text: String) = line(
-        """{"method":"session.event","params":{"sessionId":"s","event":{"type":"assistant/chunk",
-        "data":{"turn":$turn,"step":$step,"chunk":{"index":$index,"type":"block-end",
-        "block":{"type":"reasoning","text":${q(text)}}}}}}""",
+    private fun blockEndReasoning(turn: Int, step: Int, index: Int, text: String) = chunkEvent(
+        turn,
+        step,
+        JSONObject()
+            .put("type", "block-end")
+            .put("index", index)
+            .put("block", JSONObject().put("type", "reasoning").put("text", text)),
     )
 
     @Test
@@ -40,7 +61,6 @@ class DshReasoningDeltaTest {
         val a = first as DshSdkProtocolEvent.Reasoning
         val b = second as DshSdkProtocolEvent.Reasoning
 
-        // The first delta opens the block and carries its own text.
         assertEquals("user wants me to ", a.text)
         assertTrue(a.startsNewBlock)
 
@@ -67,7 +87,7 @@ class DshReasoningDeltaTest {
             val e = parser.parseLine(delta(1, 0, 0, word)) as DshSdkProtocolEvent.Reasoning
             total += e.text.length
         }
-        // Previously every delta re-sent the whole buffer: 50 * sum(1..50) characters.
+        // Previously every delta re-sent the whole buffer: sum(1..50) * len characters.
         assertEquals(50 * word.length, total)
     }
 
@@ -83,7 +103,31 @@ class DshReasoningDeltaTest {
     }
 
     @Test
-    fun `reasoning deltas and a final suffix concatenate to the full block`() {
+    fun `block-end with nothing new still closes the block`() {
+        val parser = DshSdkProtocolParser("s")
+        parser.parseLine(delta(1, 0, 0, "all "))
+        parser.parseLine(delta(1, 0, 0, "done"))
+        // The deltas already delivered the entire block text, so no suffix remains. A final
+        // marker must still be emitted or the UI leaves the Think block live forever.
+        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "all done")) as DshSdkProtocolEvent.Reasoning
+        assertEquals("", end.text)
+        assertTrue(end.isFinal)
+        assertEquals(false, end.startsNewBlock)
+    }
+
+    @Test
+    fun `a rewritten block after a retry is dropped rather than re-injected`() {
+        val parser = DshSdkProtocolParser("s")
+        parser.parseLine(delta(1, 0, 0, "original text"))
+        // The block reports text that does NOT extend what was streamed (a retry rewrote
+        // it). Emitting it would splice a second copy into the UI.
+        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "completely different")) as DshSdkProtocolEvent.Reasoning
+        assertEquals("", end.text)
+        assertTrue(end.isFinal)
+    }
+
+    @Test
+    fun `deltas plus a final suffix concatenate to the full block`() {
         val parser = DshSdkProtocolParser("s")
         val sb = StringBuilder()
         listOf("Let me ", "read ", "the logs").forEach {
@@ -95,26 +139,51 @@ class DshReasoningDeltaTest {
     }
 
     @Test
-    fun `block-end with nothing new still closes the block`() {
+    fun `turn end resets the dedup accumulator`() {
         val parser = DshSdkProtocolParser("s")
-        parser.parseLine(delta(1, 0, 0, "all "))
-        parser.parseLine(delta(1, 0, 0, "done"))
-        // The deltas already delivered the entire block text, so there is no suffix left.
-        // A final marker must still be emitted or the UI leaves the Think block live forever.
-        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "all done")) as DshSdkProtocolEvent.Reasoning
-        assertEquals("", end.text)
-        assertTrue(end.isFinal)
-        assertEquals(false, end.startsNewBlock)
-    }
+        parser.parseLine(delta(1, 0, 0, "hello"))
+        val turnEnd = JSONObject()
+            .put("method", "session.event")
+            .put(
+                "params",
+                JSONObject().put("sessionId", "s").put(
+                    "event",
+                    JSONObject().put("type", "turn/end").put(
+                        "data",
+                        JSONObject().put("reason", JSONObject().put("kind", "stop")),
+                    ),
+                ),
+            )
+            .toString()
+        parser.parseLine(turnEnd)
 
-    @Test
-    fun `a rewritten block after a retry is dropped rather than re-injected`() {
-        val parser = DshSdkProtocolParser("s")
-        parser.parseLine(delta(1, 0, 0, "original text"))
-        // The block now reports text that does NOT extend what was streamed (a retry
-        // rewrote it). Emitting it would splice a second copy into the UI.
-        val end = parser.parseLine(blockEndReasoning(1, 0, 0, "completely different")) as DshSdkProtocolEvent.Reasoning
-        assertEquals("", end.text)
-        assertTrue(end.isFinal)
+        // A fresh turn's assistant/message must not be suppressed by the previous turn's
+        // streaming state.
+        val message = JSONObject()
+            .put("method", "session.event")
+            .put(
+                "params",
+                JSONObject().put("sessionId", "s").put(
+                    "event",
+                    JSONObject().put("type", "assistant/message").put(
+                        "data",
+                        JSONObject().put(
+                            "message",
+                            JSONObject().put(
+                                "content",
+                                org.json.JSONArray().put(
+                                    JSONObject().put("type", "text").put("text", "second turn"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            .toString()
+        val event = parser.parseLine(message)
+        assertTrue(
+            "expected the second turn's message to survive, got $event",
+            event is DshSdkProtocolEvent.AssistantText && event.text == "second turn",
+        )
     }
 }
