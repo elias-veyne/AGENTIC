@@ -46,7 +46,7 @@
 </div>
 
 > [!NOTE]
-> **No on-device Android toolchain.** The Android SDK, JDK, and Gradle add roughly 570 MB and are redundant on a phone — the agent edits Android projects here and a GitHub Actions workflow builds and signs the APK on CI, which you then install as an in-app update. Android builds on-device are still available to anyone compiling the offline flavor from source.
+> **On-device Android toolchain (optional).** The Android SDK, JDK, and Gradle add roughly 570 MB — install the Android stack in Settings → Development stacks when a project needs on-device `gradle` builds, or keep building via the GitHub Actions workflow and install the signed APK as an in-app update.
 
 <p align="center">
   <strong>ARM64 Android 9+</strong><br />
@@ -306,7 +306,7 @@ Agentic allows downloading optional developer packs on demand to conserve space:
 * **C / C++ Compiler Suite**: GCC/G++, Clang, Make, and CMake for native tool compilation.
 * **PHP Development**: PHP CLI runtime, Composer, and standard database extensions.
 
-> **Why no Android toolchain?** The Android SDK, JDK, and Gradle add roughly 570 MB and are redundant on a phone — this repo's own GitHub Actions workflow builds and signs the APK on CI, and the app installs the result as an in-app update. Anyone who genuinely needs on-device `gradle` builds can still compile the `offline` product flavor from source (`./gradlew assembleOfflineRelease`), which bundles the full toolchain (JDK 17, Android SDK 36, Build Tools 35, Gradle 8.14.3, offline Maven cache).
+> **Android builds, two ways.** Add the Android development stack in Settings → Development stacks for on-device `gradle` builds (JDK 17, Android SDK 36, Build Tools 35, Gradle 8.14.3, offline Maven cache — ~570 MB downloaded on demand, or bundled when compiling the `offline` flavor via `./gradlew assembleOfflineRelease`). Or keep the default: the agent edits here and this repo's GitHub Actions workflow builds and signs the APK on CI, installed as an in-app update.
 
 > *Note: Kernel-level virtualization technologies such as Docker, KVM, systemd services, and nested hardware emulators are not supported under PRoot.*
 

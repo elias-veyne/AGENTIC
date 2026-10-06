@@ -1008,12 +1008,9 @@ private fun RuntimeSetupPromptScreen(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     Column {
-                        // The Android toolchain is ~570 MB and on-device builds are rarely
-                        // the point of an online install — CI can build the APK — so only
-                        // the offline flavor (which already bundles it) offers the stack.
-                        val stacks = DevStack.entries.filter {
-                            BuildConfig.OFFLINE_RUNTIME_BUNDLES || it != DevStack.ANDROID
-                        }
+                        // Every stack is offered in every flavor: online installs download
+                        // the bundle on demand, offline installs use the embedded copy.
+                        val stacks = DevStack.entries
                         stacks.forEachIndexed { index, stack ->
                             DevStackChoiceRow(
                                 stack = stack,
@@ -1086,6 +1083,7 @@ private fun RuntimeSetupPromptScreen(
 private const val CORE_RUNTIME_DOWNLOAD_MB = 69
 private const val DSH_RUNTIME_DOWNLOAD_MB = 27
 private const val PYTHON_RUNTIME_DOWNLOAD_MB = 55
+private const val ANDROID_RUNTIME_DOWNLOAD_MB = 570
 
 private fun setupTimeEstimate(selected: Set<DevStack>): String {
     var minimumMinutes = 3
@@ -1113,15 +1111,16 @@ private fun stackDownloadLabel(stack: DevStack): String = when {
     stack == DevStack.WEB -> " · included"
     BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack in setOf(DevStack.PYTHON, DevStack.ANDROID) -> " · included"
     !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.PYTHON -> " · 55 MB"
+    !BuildConfig.OFFLINE_RUNTIME_BUNDLES && stack == DevStack.ANDROID -> " · 570 MB"
     else -> ""
 }
 
 private fun toolchainDownloadSummary(selected: Set<DevStack>, agent: AgentKind): String {
     if (BuildConfig.OFFLINE_RUNTIME_BUNDLES) return "All selected bundles are included in this offline app"
-    // Online builds cannot install the Android stack, so it never contributes to the total.
     val total = CORE_RUNTIME_DOWNLOAD_MB +
         DSH_RUNTIME_DOWNLOAD_MB +
-        (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0)
+        (if (DevStack.PYTHON in selected) PYTHON_RUNTIME_DOWNLOAD_MB else 0) +
+        (if (DevStack.ANDROID in selected) ANDROID_RUNTIME_DOWNLOAD_MB else 0)
     val laterPackages = selected.intersect(setOf(DevStack.CPP, DevStack.PHP))
     return buildString {
         append("Download: ")

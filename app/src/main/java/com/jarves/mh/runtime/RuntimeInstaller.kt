@@ -440,12 +440,9 @@ class RuntimeInstaller(private val context: Context) {
         stack: DevStack,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        // The Android toolchain is ~570 MB and on-device builds are rarely the point of an
-        // online install — CI can build and sign the APK instead. Only the offline flavor,
-        // which already bundles the stack into the APK, is allowed to install it.
-        check(BuildConfig.OFFLINE_RUNTIME_BUNDLES || stack != DevStack.ANDROID) {
-            "The Android toolchain is not available in the online build. Build via CI instead."
-        }
+        // The Android toolchain (~570 MB) installs on demand in every flavor: the offline
+        // flavor embeds it in the APK, the online flavor downloads it from the runtime
+        // release. On-device builds are a first-class path again, alongside CI builds.
         val runtime = installedRuntime()
         if (isStackInstalled(stack)) return
         applyStack(runtime.proot, stack, 0.05f, 0.95f, onProgress)
