@@ -5,9 +5,9 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <!--
-        Adaptive-icon background for Agentic. Uses the app's AMOLED surface
-        palette (AgenticSurfaceVariant #111A2B -> near-black) so the orb
-        foreground sits on the same dark tile on every launcher shape.
+        Adaptive-icon background for Agentic (Aurora Obsidian theme). Uses the
+        app's AMOLED surface palette (AgenticSurfaceVariant #151826 -> near-black)
+        so the orb foreground sits on the same dark tile on every launcher shape.
         This replaces the pure-white system background that showed through
         the transparent corners of the legacy PNG icon.
     -->
@@ -18,8 +18,8 @@
                 android:centerX="54"
                 android:centerY="54"
                 android:gradientRadius="76.4"
-                android:startColor="#131C2B"
-                android:endColor="#04060B" />
+                android:startColor="#1B1F33"
+                android:endColor="#05060B" />
         </aapt:attr>
     </path>
 </vector>

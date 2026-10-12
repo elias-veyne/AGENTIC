@@ -833,7 +833,7 @@ import androidx.compose.material.icons.filled.Link
             }
 
             // -------------------------------------------------------------
-            // 4. ABOUT POCKET DEV
+            // 4. ABOUT AGENTIC
             // -------------------------------------------------------------
             item {
                 SectionHeader(

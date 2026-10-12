@@ -240,6 +240,9 @@ import com.jarves.mh.ui.orbs.OrbState
 import com.jarves.mh.ui.orbs.PetState
 import com.jarves.mh.ui.onboarding.DemoOnboarding
 import com.jarves.mh.ui.orbs.orbStateForActivity
+import com.jarves.mh.ui.theme.AgenticBg
+import com.jarves.mh.ui.theme.AgenticPrimary
+import com.jarves.mh.ui.theme.AgenticTextDim
 import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
 import com.jarves.mh.ui.theme.GlassCard
@@ -674,7 +677,7 @@ private data class DevStackVisuals(
 private fun getDevStackVisuals(stack: DevStack): DevStackVisuals = when (stack) {
     DevStack.WEB -> DevStackVisuals(
         icon = Icons.Default.Language,
-        accentColor = Color(0xFF38BDF8),
+        accentColor = AgenticPrimary,
         tag = "HTML · CSS · JS · TS",
     )
     DevStack.PYTHON -> DevStackVisuals(
@@ -3097,14 +3100,14 @@ private fun ProjectsScreen(
                 ) {
                     StatCard(
                         modifier = Modifier.weight(1f),
-                        accent = Color(0xFF38BDF8),
+                        accent = AgenticPrimary,
                         icon = Icons.Default.Chat,
                         title = "Sessions",
                         value = state.totalChats.toString(),
                     )
                     StatCard(
                         modifier = Modifier.weight(1f),
-                        accent = Color(0xFF7DD3FC),
+                        accent = AgenticTextDim,
                         icon = Icons.Default.SmartToy,
                         title = "Active Agents",
                         value = state.agentSessions.size.toString(),
@@ -3127,7 +3130,7 @@ private fun ProjectsScreen(
                 SectionLabel("Account")
                 NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    accent = Color(0xFF7DD3FC),
+                    accent = AgenticTextDim,
                     onClick = onShowGitHubDialog,
                 ) {
                     Row(
@@ -3165,7 +3168,7 @@ private fun ProjectsScreen(
                 ) {
                     QuickActionCard(
                         modifier = Modifier.weight(1f),
-                        accent = Color(0xFF38BDF8),
+                        accent = AgenticPrimary,
                         icon = Icons.Default.Add,
                         title = "New Chat",
                         onClick = onCreateQuickProject,
@@ -3222,7 +3225,7 @@ private fun ProjectsScreen(
                 val isImportExpanded = importExpanded || state.projectImporting || state.gitCloneRunning
                 NeonGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    accent = Color(0xFF38BDF8),
+                    accent = AgenticPrimary,
                 ) {
                     Column {
                         Row(
@@ -3334,7 +3337,7 @@ private fun ProjectsScreen(
                 items(state.recentChats, key = { it.chatId }) { chat: RecentChat ->
                     NeonGlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        accent = Color(0xFF38BDF8),
+                        accent = AgenticPrimary,
                         onClick = { onOpen(state.projects.first { it.id == chat.projectId }) },
                     ) {
                         Row(
@@ -3374,7 +3377,7 @@ private fun ProjectsScreen(
                          modifier = Modifier
                              .fillMaxWidth()
                              .padding(vertical = 10.dp),
-                         accent = Color(0xFF38BDF8),
+                         accent = AgenticPrimary,
                      ) {
                          Column(
                              modifier = Modifier
@@ -3750,7 +3753,7 @@ private fun ProjectCard(
     var renameText by rememberSaveable(project.id) { mutableStateOf(project.name) }
     NeonGlassCard(
         modifier = Modifier.fillMaxWidth(),
-        accent = Color(0xFF38BDF8),
+        accent = AgenticPrimary,
         onClick = onOpen,
     ) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -4179,6 +4182,7 @@ private fun WorkspaceScreen(
                     agentMode = state.activeChatMode,
                     chatModeLocked = state.chatModeLocked,
                     onSwitchMode = onSwitchMode,
+                    todoPlan = state.todoPlan,
                     pendingAttachments = state.pendingAttachments,
                     onAttach = {
                         attachmentLauncher.launch(arrayOf("image/*", "text/*", "application/json", "application/xml"))
@@ -4786,6 +4790,7 @@ private fun ChatModePickerCard(mode: AgentMode, onChoose: (AgentMode) -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChoicePill("Simple", "One direct reply", Icons.Default.SmartToy, mode == AgentMode.SIMPLE, Glass.BlueHalo) { onChoose(AgentMode.SIMPLE) }
                 ModeChoicePill("Agentic", "Head + 2 agents", Icons.Default.AutoAwesome, mode == AgentMode.AGENTIC, Glass.VioletHalo) { onChoose(AgentMode.AGENTIC) }
+                ModeChoicePill("Plan-Driven", "To-do list, run to completion", Icons.Default.Checklist, mode == AgentMode.LONGTASK, Glass.MintHalo) { onChoose(AgentMode.LONGTASK) }
                 ModeChoicePill("Cooperative", "Head + peers", Icons.Default.Group, mode == AgentMode.COOPERATIVE, Glass.TealHalo) { onChoose(AgentMode.COOPERATIVE) }
             }
         }
@@ -4925,9 +4930,10 @@ private fun AgentStatusDot(active: Boolean, tint: Color) {
 @Composable
 private fun LockedModeChip(mode: AgentMode) {
     val tint = when (mode) {
-        AgentMode.SIMPLE -> Color(0xFF38BDF8)
-        AgentMode.AGENTIC -> Color(0xFF7DD3FC)
-        AgentMode.COOPERATIVE -> Color(0xFF38BDF8)
+        AgentMode.SIMPLE -> AgenticPrimary
+        AgentMode.AGENTIC -> AgenticTextDim
+        AgentMode.LONGTASK -> AgenticAccent
+        AgentMode.COOPERATIVE -> AgenticPrimary
     }
     Row(
         modifier = Modifier
@@ -4962,6 +4968,7 @@ private fun ChatTab(
     agentMode: AgentMode = AgentMode.SIMPLE,
     chatModeLocked: Boolean = false,
     onSwitchMode: (AgentMode) -> Unit = {},
+    todoPlan: com.jarves.mh.agent.TodoPlan? = null,
     pendingAttachments: List<ChatAttachment>,
     onAttach: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
@@ -5077,13 +5084,19 @@ private fun ChatTab(
                         )
                     }
                 }
-                if (liveProcess.isNotEmpty() || thinkingActive) {
+                if (liveProcess.isNotEmpty() || thinkingActive || todoPlan != null) {
                     item(key = "live-agent-process") {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             when (agentMode) {
                                 AgentMode.AGENTIC -> {
                                     val shards = liveProcess.map { it.toSubtaskChip() }
                                     if (shards.isNotEmpty()) PlanCard(shards)
+                                }
+                                AgentMode.LONGTASK -> {
+                                    // Mod 4: the plan-driven checklist. The harness publishes a fresh
+                                    // TodoPlan on every status change, so this re-renders a new
+                                    // checkmark the moment an item completes.
+                                    todoPlan?.let { TodoChecklist(it) }
                                 }
                                 AgentMode.COOPERATIVE -> {
                                     PeerGrid(
@@ -5315,7 +5328,7 @@ private fun ChatComposerCapsule(
                         .size(44.dp)
                         .background(
                             Brush.linearGradient(
-                                colors = if (canSend) listOf(Color(0xFF38BDF8), Color(0xFF7DD3FC)) else listOf(Glass.Surface, Glass.Surface),
+                                colors = if (canSend) listOf(AgenticPrimary, AgenticTextDim) else listOf(Glass.Surface, Glass.Surface),
                             ),
                             shape = CircleShape,
                         )
@@ -5718,7 +5731,7 @@ private fun DmBubbleUser(message: ChatMessage) {
                 )
                 .background(
                     Brush.linearGradient(
-                        colors = listOf(Color(0xFF38BDF8), Color(0xFF7DD3FC)),
+                        colors = listOf(AgenticPrimary, AgenticTextDim),
                         start = Offset(0f, 0f),
                         end = Offset(200f, 160f),
                     ),
@@ -5966,7 +5979,7 @@ private fun ChangesTab(
                     if (expanded) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Column(
-                            Modifier.fillMaxWidth().background(Color(0xFF0B0E14)).horizontalScroll(rememberScrollState()),
+                            Modifier.fillMaxWidth().background(AgenticBg).horizontalScroll(rememberScrollState()),
                         ) {
                             change.diffLines.forEach { line -> DiffLineRow(line) }
                         }

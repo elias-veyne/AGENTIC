@@ -43,19 +43,19 @@ import androidx.compose.ui.unit.dp
  * blooms behind each card.
  */
 object Glass {
-    val Bg = Color(0xFF000000)              // pure AMOLED black
+    val Bg = AgenticBg                     // near-black obsidian canvas
     val Surface = Color(0x1CFFFFFF)         // rgba(255,255,255,.11)
     val SurfaceStrong = Color(0x24FFFFFF)   // rgba(255,255,255,.14)
     val SurfaceInset = Color(0x59FFFFFF)    // rgba(255,255,255,.35) top highlight
     val Border = Color(0x38FFFFFF)          // rgba(255,255,255,.22)
-    val BorderGlow = Color(0x6680B4FF)      // brighter blue-white when hovered
-    val Primary = Color(0xFF38BDF8)         // deep blue
-    val Violet = Color(0xFFBAE6FD)          // ice blue
-    val Text = Color(0xFFBAE6FD)            // ice blue text (with white-glow feel)
-    val TextMuted = Color(0xFF7DD3FC)       // muted light blue
-    val TextBody = Color(0xFF7DD3FC)        // body-size light blue
-    val Ok = Color(0xFF69D69E)              // green — keep distinct from Primary
-    val Warn = Color(0xFFFAB387)            // peach — keep distinct from Primary
+    val BorderGlow = Color(0x66A9B2FF)      // brighter iris-white when hovered
+    val Primary = AgenticPrimary            // electric iris
+    val Violet = AgenticSecondary           // cyan iris
+    val Text = AgenticText                  // near-white with a cool bias
+    val TextMuted = AgenticTextDim          // muted slate
+    val TextBody = AgenticTextDim           // body-size slate
+    val Ok = AgenticAccent                  // mint — "done" everywhere
+    val Warn = AgenticWarning               // amber — escalation/blocked
 
     val Radius = 20.dp
     val RadiusCard = 16.dp
@@ -63,20 +63,23 @@ object Glass {
 
     /** Two-stop radial halo that sits behind a card, tinted per-accent. */
     data class Halo(
-        val g1: Color = Color(0x4D38BDF8.toInt()),   // deep blue ~30%
-        val g2: Color = Color(0x3880B4FF.toInt()),   // light blue ~22%
+        val g1: Color = Color(0x4D8B7CFF.toInt()),   // electric iris ~30%
+        val g2: Color = (0x385EEAD4.toInt()),        // cyan iris ~22%
     )
 
     val BlueHalo = Halo()
-    val VioletHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x38BAE6FD.toInt()))
-    val TealHalo = Halo(g1 = Color(0x4D38BDF8.toInt()), g2 = Color(0x3869D69E.toInt()))
+    val VioletHalo = Halo(g1 = Color(0x4D8B7CFF.toInt()), g2 = Color(0x385EEAD4.toInt()))
+    val TealHalo = Halo(g1 = Color(0x4D8B7CFF.toInt()), g2 = Color(0x384ADE80.toInt()))
+    // Mod 4: the mint halo backs the Plan-Driven mode and its checklist, so the
+    // to-do surface reads as the same green the UI uses for "done" everywhere.
+    val MintHalo = Halo(g1 = Color(0x4D4ADE80.toInt()), g2 = Color(0x385EEAD4.toInt()))
 
-    // Icon-tile gradient pairs in the approved AMOLED blue ramp. These keep the
-    // per-card accent variation readable while staying on-palette: deep blue at
-    // the top of the ramp, ice blue, and green for the "healthy/ok" card.
-    val TileBlue = 0x3D38BDF8 to 0x1A38BDF8
-    val TileIce = 0x3DBAE6FD to 0x1A7DD3FC
-    val TileOk = 0x3D69D69E to 0x1A38BDF8
+    // Icon-tile gradient pairs on the Aurora Obsidian ramp. The primary iris
+    // carries most of the UI; cyan and mint provide the per-card accent
+    // variation while staying on-palette.
+    val TileBlue = 0x3D8B7CFF to 0x1A8B7CFF
+    val TileIce = 0x3D5EEAD4 to 0x1A5EEAD4
+    val TileOk = 0x3D4ADE80 to 0x1A8B7CFF
 }
 
 /**

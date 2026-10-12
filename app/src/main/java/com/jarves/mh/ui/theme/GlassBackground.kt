@@ -10,8 +10,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
- * The ambient canvas: near-black base with two large soft radial glows (cyan
- * top-left, violet bottom-right) and a subtle bottom vignette. Every glass
+ * The ambient canvas: obsidian base with two large soft radial glows (iris
+ * top-left, cyan-teal bottom-right) and a subtle bottom vignette. Every glass
  * surface floats on top of this, which is what makes the translucency visible.
  */
 @Composable
@@ -24,14 +24,14 @@ fun GlassBackground(modifier: Modifier = Modifier) {
 
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF38BDF8).copy(alpha = 0.13f), Color.Transparent),
+                        colors = listOf(AgenticPrimary.copy(alpha = 0.13f), Color.Transparent),
                         center = Offset(size.width * 0.15f, size.height * -0.05f),
                         radius = size.maxDimension * 0.62f,
                     ),
                 )
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF7DD3FC).copy(alpha = 0.11f), Color.Transparent),
+                        colors = listOf(AgenticSecondary.copy(alpha = 0.11f), Color.Transparent),
                         center = Offset(size.width * 0.9f, size.height * 1.05f),
                         radius = size.maxDimension * 0.58f,
                     ),

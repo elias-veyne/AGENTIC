@@ -1088,9 +1088,9 @@ private fun SubAgentsSection(
                 Column(Modifier.weight(1f)) {
                     Text("Sub-Agents", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Text(
-                        if (agentMode == AgentMode.AGENTIC)
-                            "Active · these two workers run your Agentic-mode shards"
-                        else "Used by Agentic mode · switch to it from the chat composer",
+                        if (agentMode == AgentMode.AGENTIC || agentMode == AgentMode.LONGTASK)
+                            "Active · these named specialists run your Agentic and Plan-Driven shards"
+                        else "Used by Agentic and Plan-Driven mode · switch from the chat composer",
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -20,6 +20,11 @@ import com.jarves.mh.data.ModelRegistry
 import com.jarves.mh.agent.AgentId
 import com.jarves.mh.agent.AgentMode
 import com.jarves.mh.agent.AgentSystem
+import com.jarves.mh.agent.SubAgent
+import com.jarves.mh.agent.SubAgentRouter
+import com.jarves.mh.agent.TodoItem
+import com.jarves.mh.agent.TodoPlan
+import com.jarves.mh.agent.TodoStatus
 import com.jarves.mh.model.ActivityItem
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.ChangeItem
@@ -224,6 +229,23 @@ data class AppUiState(
     val activity: List<ActivityItem> = emptyList(),
     val liveProcess: List<ActivityItem> = emptyList(),
     val liveThinking: Boolean = false,
+
+    /**
+     * Mod 3 – the named specialist roster backing the chat's sub-agents.
+     *
+     * OpenCode-style sub-agents are addressed by identity rather than by shard
+     * index, so the roster is published to the UI and each live activity item
+     * carries the specialist it was routed to.
+     */
+    val subAgents: List<com.jarves.mh.agent.SubAgent> = emptyList(),
+    /**
+     * Mod 4 – the live to-do list for a plan-driven ([AgentMode.LONGTASK]) run.
+     *
+     * Null outside a plan-driven run. The harness owns the mutable plan and
+     * publishes a fresh snapshot here on every status change, which is what lets
+     * the checklist render a new checkmark the moment an item completes.
+     */
+    val todoPlan: com.jarves.mh.agent.TodoPlan? = null,
     val activeThinkingBlockId: Long? = null,
     val taskStartedAtMillis: Long? = null,
     val taskFinishedAtMillis: Long? = null,
@@ -294,7 +316,7 @@ data class AppUiState(
     val activeChatMode: AgentMode = AgentMode.SIMPLE,
     /** True once the user has picked a mode for the active chat (locked — no mid-chat switches). */
     val chatModeLocked: Boolean = false,
-    val accentColor: Int = 0xFF38BDF8.toInt(),
+    val accentColor: Int = 0xFF8B7CFF.toInt(),
     /** Notification toggles (Settings → Notifications). Defaults mirror the demo. */
     val notifTaskAlerts: Boolean = true,
     val notifApprovalRequests: Boolean = true,
@@ -388,6 +410,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var projectTerminalProjectId: String? = null
     @Volatile private var projectTerminalStopRequested: Boolean = false
     @Volatile private var setupCompletionHandled: Boolean = false
+    // Mod 4: set by [stopTask], cleared when a run begins. Lets the plan-driven
+    // loop distinguish a user-initiated stop from an ordinary step finishing.
+    @Volatile private var stopRequested: Boolean = false
     @Volatile private var githubAuthProcess: Process? = null
     private var githubAuthJob: kotlinx.coroutines.Job? = null
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
@@ -3507,6 +3532,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }, decomposer = decomposer, executor = executor)
                 }
             }
+            AgentMode.LONGTASK -> {
+                viewModelScope.launch {
+                    runTodoDrivenTask(project, runtimePrompt, history, runProvider, pinnedSecret)
+                }
+            }
             AgentMode.COOPERATIVE -> {
                 viewModelScope.launch {
                     val cooperative = agentSystem.getCooperative()
@@ -3586,6 +3616,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopTask() {
         if (!_state.value.isRunning) return
+        // Mod 4: the plan-driven loop is sequential, so a completing item looks
+        // identical to a stopped one from the event stream alone. This explicit
+        // flag is what lets [runTodoDrivenTask] tell "the user stopped" from
+        // "this step finished" and leave the remaining items pending.
+        stopRequested = true
         viewModelScope.launch {
             val sessions = _state.value.agentSessions.values.toList()
             if (sessions.isNotEmpty()) {
@@ -4236,6 +4271,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         agent3Provider: ProviderProfile? = null,
         subIndex: Int = 0,
         parentChatId: String? = null,
+        /**
+         * Mod 3 – the named specialist this shard was routed to. When set it
+         * overrides the legacy "Sub-Agent N" label so the chat shows the
+         * OpenCode-style identity ("Researcher", "Implementer", …) instead of an
+         * anonymous index.
+         */
+        workerOverride: SubAgent? = null,
+        keyScopeOverride: String? = null,
     ): String {
         // The head (Agent 1) decides the work; sub-agent shards are routed to each sub's own
         // provider key. Even subIndex → Sub-Agent 1 (agent2), odd → Sub-Agent 2 (agent3).
@@ -4244,9 +4287,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // never changes the Head's active key.
         fun usable(p: ProviderProfile?, scope: String) =
             p != null && (p.hasSecret || p.dshApi.isNotBlank() || vault.get(scope, p.kind.name) != null)
+        // Mod 3: a named specialist may carry its own key scope; honour it when present so
+        // routing work to "the Researcher" also routes its credentials.
+        val keyScope = keyScopeOverride ?: if (subIndex % 2 == 0) AGENT2_SCOPE else AGENT3_SCOPE
+        val scopedProvider = when (keyScope) {
+            AGENT3_SCOPE -> agent3Provider
+            else -> agent2Provider
+        }
         val routedProvider = when {
-            usable(agent2Provider, AGENT2_SCOPE) && usable(agent3Provider, AGENT3_SCOPE) ->
-                if (subIndex % 2 == 0) agent2Provider!! else agent3Provider!!
+            usable(scopedProvider, keyScope) -> scopedProvider!!
             usable(agent2Provider, AGENT2_SCOPE) -> agent2Provider!!
             usable(agent3Provider, AGENT3_SCOPE) -> agent3Provider!!
             else -> provider
@@ -4264,7 +4313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Sub-agent work is surfaced in the chat as a labelled task tree. Previously the
         // shard collector swallowed everything except the final text, so two sub-agents
         // could run correctly with zero visible progress and the UI looked hung.
-        val workerLabel = if (subIndex % 2 == 0) "Sub-Agent 1" else "Sub-Agent 2"
+        val workerLabel = workerOverride?.name ?: if (subIndex % 2 == 0) "Sub-Agent 1" else "Sub-Agent 2"
         fun publishSubAgentActivity(item: ActivityItem) {
             _state.update { current ->
                 if (current.activeChatId != parentChatId) return@update current
@@ -4326,9 +4375,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             instruction,
             history,
             routedProvider,
-            resolvedSecret = when (routedProvider) {
-                agent2Provider -> vault.get(AGENT2_SCOPE, routedProvider.kind.name)
-                agent3Provider -> vault.get(AGENT3_SCOPE, routedProvider.kind.name)
+            resolvedSecret = when {
+                routedProvider === scopedProvider && keyScope == AGENT3_SCOPE ->
+                    vault.get(AGENT3_SCOPE, routedProvider.kind.name)
+                routedProvider === scopedProvider -> vault.get(AGENT2_SCOPE, routedProvider.kind.name)
+                routedProvider === agent2Provider -> vault.get(AGENT2_SCOPE, routedProvider.kind.name)
+                routedProvider === agent3Provider -> vault.get(AGENT3_SCOPE, routedProvider.kind.name)
                 else -> null
             },
             sessionId = sessionId,
@@ -4437,6 +4489,272 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return children.takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * Mod 4 – the plan-driven long-horizon loop.
+     *
+     * This is deliberately NOT the [AgentMode.AGENTIC] path. That path
+     * decomposes the request once, fans the shards out, merges them and stops.
+     * This one is *sequential and persistent*: first the model is asked to
+     * produce an ordered to-do list for the whole request, then the harness
+     * keeps re-entering the model on the next outstanding item — with the item's
+     * own instruction, context, and routed sub-agent — until nothing is left.
+     * Progress survives between items, and every status change publishes a fresh
+     * [TodoPlan] snapshot so the checklist can render a checkmark the moment an
+     * item completes.
+     *
+     * The loop terminates when the plan has no outstanding item, when the model
+     * reports a blocking failure, or when the harness is stopped by the user.
+     */
+    private suspend fun runTodoDrivenTask(
+        project: Project,
+        runtimePrompt: String,
+        history: List<ChatMessage>,
+        provider: ProviderProfile,
+        pinnedSecret: String?,
+    ) {
+        val runtime = activeRuntime()
+        val chatId = state.value.activeChatId
+        val router = SubAgentRouter()
+        val requestId = "todo_${System.currentTimeMillis()}"
+        // A fresh run always clears a previous stop; the flag is per-run.
+        stopRequested = false
+
+        // Publish the named roster up front so the chat can attribute each step
+        // to a specialist from the very first plan line.
+        _state.update { it.copy(subAgents = SubAgent.DefaultRoster) }
+
+        // ---- Phase 1: the model drafts the plan ---------------------------------
+        _state.update {
+            it.copy(
+                todoPlan = TodoPlan(requestId),
+                liveProcess = listOf(ActivityItem("Drafting the plan", "The agent is breaking the request into a to-do list", false)),
+                liveThinking = true,
+            )
+        }
+        val rawPlan = runLLMTodoPlan(runtime, project, runtimePrompt, history, provider)
+        var plan = parseTodoPlan(rawPlan, requestId)
+        if (plan == null) {
+            // Degradation is announced, not hidden: a generic single-step plan is
+            // only used when the model's reply genuinely could not be read.
+            _state.update { it.copy(toastMessage = "Could not read the plan — running the request as one step") }
+            plan = TodoPlan(
+                requestId = requestId,
+                items = listOf(TodoItem("step1", runtimePrompt.take(120))),
+            )
+        }
+        // Publish the drafted checklist before any work starts; this is what the
+        // user asked for — the to-do appears first, then the harness works it.
+        _state.update { it.copy(todoPlan = plan, liveThinking = false) }
+
+        // ---- Phase 2: drive each outstanding item to completion ------------------
+        val notes = mutableListOf<String>()
+        var itemGuard = 0
+        while (itemGuard++ < MAX_TODO_STEPS) {
+            // Re-read the live plan each iteration: marking an item publishes a new
+            // snapshot, and the loop must always advance on the freshest state.
+            val current = state.value.todoPlan?.takeIf { it.requestId == requestId } ?: break
+            val item = current.nextPending() ?: break
+            // The authoritative stop signal is the flag [stopTask] sets, not the
+            // running-state: each shard's SessionCompleted clears that state, so
+            // relying on it here would end the plan after the very first item.
+            if (stopRequested) break
+
+            // Move the item to InProgress and publish immediately so the checklist
+            // shows the spinner on exactly one row.
+            var working = current.mark(item.id, TodoStatus.InProgress)
+            _state.update { it.copy(todoPlan = working) }
+            // A finishing shard clears the chat's running state; re-assert it before
+            // each item so a concurrent send stays gated out and the stop button
+            // stays visible for the whole plan.
+            markChatRunning(project.id, chatId)
+
+            val agent = router.assignFor(item.title)
+            _state.update {
+                it.copy(liveProcess = listOf(ActivityItem("${agent.name} · ${item.title}", item.detail, false)))
+            }
+            agentSystem.recordHeartbeat(AgentId.worker(agent.id))
+
+            val instruction = buildString {
+                appendLine("Continue the plan. Complete ONLY this step: ${item.title}")
+                item.detail?.takeIf { it.isNotBlank() }?.let { appendLine("Detail: $it") }
+                appendLine("When you are done, say what you changed in one or two sentences. Do not attempt later steps.")
+            }
+
+            val output = runRealShard(
+                runtime = runtime,
+                projectId = project.id,
+                projectSlug = project.slug,
+                projectKind = project.kind,
+                instruction = instruction,
+                history = history,
+                provider = provider,
+                agent2Provider = state.value.agent2Provider,
+                agent3Provider = state.value.agent3Provider,
+                subIndex = itemGuard,
+                parentChatId = chatId,
+                workerOverride = agent,
+                keyScopeOverride = agent.keyScope,
+            )
+
+            // The chat's stop button cancels this scope; a cancelled shard returns
+            // an empty string. Treat empty output as a hard failure of THIS item
+            // rather than silently marking it done.
+            val stopped = stopRequested
+            working = state.value.todoPlan?.takeIf { it.requestId == requestId } ?: working
+
+            // A stop is user-initiated and final: put the in-flight item back to
+            // pending (a later re-run can retry it), leave the rest pending too,
+            // and report the run as stopped rather than as a step failure.
+            if (stopped) {
+                working = working.mark(item.id, TodoStatus.Pending)
+                _state.update {
+                    it.copy(
+                        todoPlan = working,
+                        liveProcess = emptyList(),
+                        liveThinking = false,
+                        toastMessage = "Plan stopped — ${working.completedCount} of ${working.items.size} steps complete",
+                    )
+                }
+                return
+            }
+
+            val failed = output.isBlank()
+            working = working.mark(
+                item.id,
+                if (failed) TodoStatus.Failed else TodoStatus.Completed,
+                note = output.take(160).ifBlank { null },
+            )
+            _state.update { it.copy(todoPlan = working) }
+
+            if (failed) {
+                _state.update {
+                    it.copy(
+                        liveProcess = listOf(ActivityItem("Step failed", item.title, isComplete = true)),
+                        toastMessage = "Stopping the plan — a step could not be completed",
+                    )
+                }
+                notes += "✗ ${item.title} — did not complete"
+                break
+            }
+
+            notes += "✓ ${item.title}"
+            _state.update {
+                it.copy(
+                    liveProcess = listOf(
+                        ActivityItem(
+                            "✓ ${item.title}",
+                            "Completed by ${agent.name}",
+                            isComplete = true,
+                        ),
+                    ),
+                )
+            }
+        }
+
+        // ---- Phase 3: summarise --------------------------------------------------
+        val finalPlan = state.value.todoPlan?.takeIf { it.requestId == requestId }
+        val summary = buildString {
+            appendLine("Plan finished — ${finalPlan?.completedCount ?: 0} of ${finalPlan?.items?.size ?: 0} steps complete.")
+            appendLine()
+            notes.forEach { appendLine(it) }
+            if (finalPlan?.hasFailed == true) {
+                appendLine()
+                appendLine("Some steps could not be completed; re-run the request to retry them.")
+            }
+        }.trimEnd()
+
+        _state.update {
+            it.copy(
+                messages = it.messages + ChatMessage(id = "plan_$requestId", text = summary, fromUser = false),
+                todoPlan = null,
+                liveProcess = emptyList(),
+                liveThinking = false,
+                toastMessage = if (finalPlan?.isComplete == true) "Every step of the plan is complete" else null,
+            )
+        }
+        persistMessages()
+    }
+
+    /**
+     * Asks the model to draft the ordered to-do list that [runTodoDrivenTask]
+     * then works through. Returns the raw reply for [parseTodoPlan] to read.
+     */
+    private suspend fun runLLMTodoPlan(
+        runtime: RuntimeBridge,
+        project: Project,
+        instruction: String,
+        history: List<ChatMessage>,
+        provider: ProviderProfile,
+    ): String {
+        val output = StringBuilder()
+        val done = CompletableDeferred<String>()
+        val sessionId: String = UUID.randomUUID().toString()
+        sessionProjects[sessionId] = SessionOwner(project.id, state.value.activeChatId)
+
+        val collector = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            runtime.events.collect { ev ->
+                when (ev) {
+                    is RuntimeEvent.AssistantDelta -> if (ev.sessionId == sessionId) output.append(ev.text)
+                    is RuntimeEvent.SessionCompleted -> if (ev.sessionId == sessionId) done.complete(output.toString())
+                    is RuntimeEvent.SessionFailed -> if (ev.sessionId == sessionId) done.complete(output.toString())
+                    is RuntimeEvent.SessionStopped -> if (ev.sessionId == sessionId) done.complete(output.toString())
+                    else -> {}
+                }
+            }
+        }
+
+        val planPrompt = buildString {
+            appendLine("You are planning a long-running task. Break the request into a SHORT ordered to-do list of concrete steps.")
+            appendLine("Each step must be one focused action the agent can finish in one pass.")
+            appendLine("Respond ONLY with a JSON array of {id, title, detail} objects. Example:")
+            appendLine("""[{ "id": "1", "title": "Read the existing layout", "detail": "Find the main composable" }, { "id": "2", "title": "Add the button", "detail": "Wire it to the view model" }]""")
+            appendLine()
+            appendLine("Request: $instruction")
+        }
+        runtime.startSession(
+            project.id,
+            project.slug,
+            project.kind,
+            planPrompt,
+            history,
+            provider,
+            sessionId = sessionId,
+        )
+
+        val result = withTimeoutOrNull(TASK_TIMEOUT.toMillis()) { done.await() } ?: output.toString()
+        collector.cancel()
+        return result
+    }
+
+    /**
+     * Reads the to-do list out of a model reply. As with [parseLLMDecompose] the
+     * array is located by its first `[` .. last `]` because the model routinely
+     * wraps a bare array in prose or a code fence. Returns null when nothing
+     * parses so the caller can announce the degradation.
+     */
+    private fun parseTodoPlan(raw: String, requestId: String): TodoPlan? {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return null
+        val start = trimmed.indexOf('[')
+        val end = trimmed.lastIndexOf(']')
+        if (start < 0 || end <= start) return null
+
+        val arrayBody = trimmed.substring(start + 1, end)
+        val items = mutableListOf<TodoItem>()
+        for ((index, match) in DECOMPOSE_OBJECT.findAll(arrayBody).withIndex()) {
+            val obj = match.value
+            val id = DECOMPOSE_ID.find(obj)?.groupValues?.get(1)?.trim().takeIf { !it.isNullOrBlank() }
+                ?: "step${index + 1}"
+            val title = DECOMPOSE_TITLE.find(obj)?.groupValues?.get(1)?.trim()
+            val detail = DECOMPOSE_DETAIL.find(obj)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+            if (!title.isNullOrBlank()) {
+                items.add(TodoItem(id = id, title = title, detail = detail))
+            }
+        }
+        if (items.isEmpty()) return null
+        return TodoPlan(requestId = requestId, items = items)
+    }
+
     companion object {
         private const val MINIMUM_INITIALIZATION_SCREEN_MS = 3_000L
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
@@ -4454,6 +4772,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TEST_OPENROUTER_MODEL = "stealth/ox-alpha"
         private val TASK_TIMEOUT = java.time.Duration.ofMinutes(5)
 
+        // Mod 4: the plan-driven loop is bounded so a model that keeps discovering
+        // "one more step" cannot spin forever. 16 focused steps is generous for a
+        // chat turn; anything past that is re-planning, not execution.
+        private const val MAX_TODO_STEPS = 16
+
         // Decomposition parsing. The object pattern is non-greedy and brace-free so a
         // nested object cannot swallow the following entry. The id/instruction patterns
         // accept single quotes and unquoted ids, which models emit despite being asked
@@ -4462,6 +4785,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private val DECOMPOSE_ID = Regex("""["']?id["']?\s*[:=]\s*["']?([^,"'}\s]+)["']?""")
         private val DECOMPOSE_INSTRUCTION =
             Regex("""["']?instruction["']?\s*[:=]\s*["']((?:[^"'\\]|\\.)*)["']""")
+
+        // Mod 4: to-do list parsing. title/detail use the same escape-tolerant
+        // quoted-body pattern as DECOMPOSE_INSTRUCTION.
+        private val DECOMPOSE_TITLE =
+            Regex("""["']?title["']?\s*[:=]\s*["']((?:[^"'\\]|\\.)*)["']""")
+        private val DECOMPOSE_DETAIL =
+            Regex("""["']?detail["']?\s*[:=]\s*["']((?:[^"'\\]|\\.)*)["']""")
 
         // Key-vault scopes. Each agent role keeps its own per-provider pool so
         // reconfiguring one role never re-keys another (the vault is keyed by

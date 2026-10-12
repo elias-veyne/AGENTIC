@@ -106,9 +106,9 @@ class AppPreferences(private val context: Context) {
         get() = preferences.getString("debug_update_manifest_url", "") ?: ""
         set(value) { preferences.edit().putString("debug_update_manifest_url", value).apply() }
 
-    /** Accent color chosen in Settings → Appearance, as an ARGB Int (default cyan). */
+    /** Accent color chosen in Settings → Appearance, as an ARGB Int (default iris violet). */
     var accentColor: Int
-        get() = preferences.getInt("accent_color", 0xFF38BDF8.toInt())
+        get() = preferences.getInt("accent_color", 0xFF8B7CFF.toInt())
         set(value) { preferences.edit().putInt("accent_color", value).apply() }
 
     /** Agent mode chosen during onboarding or from the composer mode pills. */

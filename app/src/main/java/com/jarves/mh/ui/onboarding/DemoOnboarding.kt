@@ -58,6 +58,7 @@ import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
+import com.jarves.mh.ui.theme.AgenticPrimary
 import com.jarves.mh.ui.theme.Glass
 import com.jarves.mh.ui.theme.GlassBackground
 
@@ -411,7 +412,7 @@ private fun SetupRow(
             Text(description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 15.sp)
         }
         if (complete) {
-            Box(Modifier.size(22.dp).background(Color(0xFF38BDF8), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(22.dp).background(AgenticPrimary, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(14.dp))
             }
         } else {
@@ -425,11 +426,11 @@ private fun SetupRow(
 @Composable
 private fun StatusPill(on: Boolean, label: String) {
     Row(
-        Modifier.background(if (on) Color(0xFF38BDF8).copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+        Modifier.background(if (on) AgenticPrimary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(6.dp).background(if (on) Color(0xFF38BDF8) else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
+        Box(Modifier.size(6.dp).background(if (on) AgenticPrimary else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
         Spacer(Modifier.width(6.dp))
         Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
     }
