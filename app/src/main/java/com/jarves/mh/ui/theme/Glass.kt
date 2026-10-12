@@ -64,7 +64,7 @@ object Glass {
     /** Two-stop radial halo that sits behind a card, tinted per-accent. */
     data class Halo(
         val g1: Color = Color(0x4D8B7CFF.toInt()),   // electric iris ~30%
-        val g2: Color = (0x385EEAD4.toInt()),        // cyan iris ~22%
+        val g2: Color = Color(0x385EEAD4.toInt()),        // cyan iris ~22%
     )
 
     val BlueHalo = Halo()

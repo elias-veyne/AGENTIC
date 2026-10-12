@@ -4570,7 +4570,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val agent = router.assignFor(item.title)
             _state.update {
-                it.copy(liveProcess = listOf(ActivityItem("${agent.name} · ${item.title}", item.detail, false)))
+                it.copy(liveProcess = listOf(ActivityItem("${agent.name} · ${item.title}", item.detail ?: "", false)))
             }
             agentSystem.recordHeartbeat(AgentId.worker(agent.id))
 

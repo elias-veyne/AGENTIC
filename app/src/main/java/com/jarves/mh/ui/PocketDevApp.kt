@@ -87,6 +87,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -239,7 +240,9 @@ import com.jarves.mh.ui.orbs.OrbPet
 import com.jarves.mh.ui.orbs.OrbState
 import com.jarves.mh.ui.orbs.PetState
 import com.jarves.mh.ui.onboarding.DemoOnboarding
+import com.jarves.mh.ui.chat.TodoChecklist
 import com.jarves.mh.ui.orbs.orbStateForActivity
+import com.jarves.mh.ui.theme.AgenticAccent
 import com.jarves.mh.ui.theme.AgenticBg
 import com.jarves.mh.ui.theme.AgenticPrimary
 import com.jarves.mh.ui.theme.AgenticTextDim
