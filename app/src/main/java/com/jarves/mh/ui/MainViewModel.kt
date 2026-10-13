@@ -3223,6 +3223,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(openedFilePath = null, openedFileContent = null, fileContentLoading = false) }
     }
 
+    /**
+     * Imports a file the user picked from the phone straight into the active project's
+     * workspace root. Unlike [addChatAttachments] this is not scoped to one chat and
+     * accepts any file type — the imported file shows up in the Files tab next to what
+     * the agent has written, so the user can seed a project with their own assets,
+     * sources, or configs the way a desktop harness lets them drop a file in.
+     */
+    fun importWorkspaceFile(uri: android.net.Uri) {
+        val project = _state.value.activeProject ?: return
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching { copyFileIntoWorkspace(project, uri) }
+            }
+            outcome.fold(
+                onSuccess = { name ->
+                    refreshProjectFiles()
+                    _state.update { it.copy(toastMessage = "Added $name to the project") }
+                },
+                onFailure = { error ->
+                    _state.update {
+                        it.copy(toastMessage = "Could not add file: ${error.message?.take(120)}")
+                    }
+                },
+            )
+        }
+    }
+
+    private fun copyFileIntoWorkspace(project: Project, uri: android.net.Uri): String {
+        val resolver = getApplication<Application>().contentResolver
+        var displayName = "file"
+        resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    .takeIf { it >= 0 }?.let { displayName = cursor.getString(it) ?: displayName }
+            }
+        }
+        val safeName = sanitizeAttachmentName(displayName).ifBlank { "imported-file" }
+        val root = projectWorkspaceRoot(project).canonicalFile.apply { mkdirs() }
+        val destination = resolveUniqueWorkspacePath(root, safeName)
+        require(destination.toPath().startsWith(root.toPath())) { "Unsafe import destination" }
+        var copied = 0L
+        try {
+            resolver.openInputStream(uri)?.buffered()?.use { input ->
+                destination.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        require(copied <= MAX_IMPORT_BYTES) { "file is larger than 100 MB" }
+                        output.write(buffer, 0, count)
+                    }
+                }
+            } ?: error("Could not read $displayName")
+        } catch (error: Throwable) {
+            destination.delete()
+            throw error
+        }
+        return destination.name
+    }
+
+    private fun resolveUniqueWorkspacePath(root: File, name: String): File {
+        val stem = name.substringBeforeLast('.', name)
+        val extension = name.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
+        var candidate = File(root, name)
+        var suffix = 2
+        while (candidate.exists()) candidate = File(root, "$stem-${suffix++}$extension")
+        return candidate
+    }
+
 
     private fun readWorkspace(project: Project): List<WorkspaceEntry> {
         val root = projectWorkspaceRoot(project)
@@ -4762,6 +4832,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val MAX_PROJECT_TERMINAL_OUTPUT = 200_000
         private const val MAX_ATTACHMENTS_PER_MESSAGE = 5
         private const val MAX_ATTACHMENT_BYTES = 25L * 1024L * 1024L
+        // Workspace imports accept larger, arbitrary files than chat attachments.
+        private const val MAX_IMPORT_BYTES = 100L * 1024L * 1024L
         private const val MAX_IMPORTED_PROJECT_BYTES = 8L * 1024L * 1024L * 1024L
         private const val MAX_IMPORTED_ZIP_ENTRIES = 100_000
         private const val LEGACY_GITHUB_TOKEN_KEY = "GITHUB_APP"

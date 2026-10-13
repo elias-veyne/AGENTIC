@@ -366,6 +366,7 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             onTerminalCancel = viewModel::cancelProjectTerminalCommand,
             onUseSuggestedProjectRoot = viewModel::useSuggestedProjectRoot,
             onExportProject = viewModel::exportActiveProject,
+            onAddWorkspaceFile = viewModel::importWorkspaceFile,
             onAddAttachments = viewModel::addChatAttachments,
             onRemoveAttachment = viewModel::removePendingAttachment,
             onOpenAttachment = viewModel::openChatAttachment,
@@ -3953,6 +3954,7 @@ private fun WorkspaceScreen(
     onTerminalCancel: () -> Unit,
     onUseSuggestedProjectRoot: () -> Unit,
     onExportProject: (Uri) -> Unit,
+    onAddWorkspaceFile: (Uri) -> Unit,
     onAddAttachments: (List<Uri>) -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onOpenAttachment: (ChatAttachment) -> Unit,
@@ -3970,6 +3972,12 @@ private fun WorkspaceScreen(
     val exportProjectLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
         onResult = { uri -> if (uri != null) onExportProject(uri) },
+    )
+    // Issue 4: lets the user drop one of their own files straight into the project
+    // workspace, the way a desktop harness accepts a dropped file.
+    val addFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri -> if (uri != null) onAddWorkspaceFile(uri) },
     )
     val attachmentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -4222,6 +4230,7 @@ private fun WorkspaceScreen(
                     onExport = {
                         exportProjectLauncher.launch("${state.activeProject?.slug ?: "project"}.zip")
                     },
+                    onAddFile = { addFileLauncher.launch(arrayOf("*/*")) },
                 )
                 WorkspaceTab.CHANGES -> ChangesTab(
                     state.changes,
@@ -4639,6 +4648,7 @@ private fun FilesTab(
     onOpenFile: (WorkspaceEntry) -> Unit,
     onUseSuggestedProjectRoot: () -> Unit,
     onExport: () -> Unit,
+    onAddFile: () -> Unit,
 ) {
     var expandedDirectories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     LaunchedEffect(files.map { it.path }) {
@@ -4686,6 +4696,9 @@ private fun FilesTab(
                     }
                     if (!loading && files.any { !it.isDirectory }) {
                         IconButton(onClick = onExport) { Icon(Icons.Default.Download, "Export project as ZIP") }
+                    }
+                    if (!loading) {
+                        IconButton(onClick = onAddFile) { Icon(Icons.Default.Add, "Add a file from your phone") }
                     }
                     if (loading) {
                         CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)

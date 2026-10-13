@@ -931,8 +931,16 @@ class DshRuntimeBridge(
          * behalf. Must comfortably exceed normal inter-frame gaps (a slow endpoint can
          * pause between the last delta and its status), but a turn that stays quiet this
          * long is over — keeping the spinner alive past this point is the hang.
+         *
+         * This is only the *fallback*: the fast path is the harness's own running->idle
+         * status transition, which shuts the session down immediately. This timer fires
+         * only when that status never arrives. It was 90 s, which left a finished
+         * conversation holding the session (and the running flag) open for a minute and
+         * a half after the reply — felt like the session "never stops". Trailing frames
+         * (file changes, final markers) land within a second or two, so 12 s is a
+         * generous bound that still tears the session down promptly.
          */
-        private const val TURN_END_GRACE_MS = 90_000L
+        private const val TURN_END_GRACE_MS = 12_000L
 
         /**
          * How long a live harness may stay completely silent before the session is failed.

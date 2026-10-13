@@ -1497,40 +1497,57 @@ class RuntimeInstaller(private val context: Context) {
             return
         }
         val temporary = File(destination.parentFile, "${destination.name}.part")
-        var existing = temporary.takeIf(File::isFile)?.length() ?: 0L
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 20_000
-        connection.readTimeout = 120_000
-        connection.instanceFollowRedirects = true
-        if (existing > 0L) connection.setRequestProperty("Range", "bytes=$existing-")
-        check(connection.responseCode in 200..299) { "Download failed with HTTP ${connection.responseCode}" }
-        val resumed = connection.responseCode == HttpURLConnection.HTTP_PARTIAL && existing > 0L
-        if (!resumed) {
-            temporary.delete()
-            existing = 0L
-        }
-        val total = connection.contentLengthLong.takeIf { it >= 0L }?.plus(existing) ?: -1L
-        connection.inputStream.use { input ->
-            FileOutputStream(temporary, resumed).use { output ->
-                val buffer = ByteArray(128 * 1024)
-                var downloaded = existing
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    output.write(buffer, 0, count)
-                    downloaded += count
-                    onBytes(downloaded, total)
+        // A single dropped packet used to propagate all the way up and defer the whole
+        // install to "retry on next launch" — on a flaky link a large bundle (the Android
+        // Maven mirror is ~260 MB) could download repeatedly and never install, which the
+        // user sees as "it downloads but never finishes". Retry in place instead: the
+        // .part file above is resumed by the server's Range support, so each attempt only
+        // refetches what the connection lost.
+        var lastError: Throwable? = null
+        repeat(MAX_DOWNLOAD_ATTEMPTS) { attempt ->
+            try {
+                val existing = temporary.takeIf(File::isFile)?.length() ?: 0L
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 20_000
+                connection.readTimeout = 120_000
+                connection.instanceFollowRedirects = true
+                if (existing > 0L) connection.setRequestProperty("Range", "bytes=$existing-")
+                check(connection.responseCode in 200..299) { "Download failed with HTTP ${connection.responseCode}" }
+                val resumed = connection.responseCode == HttpURLConnection.HTTP_PARTIAL && existing > 0L
+                val resumeFrom = if (resumed) existing else 0L
+                if (!resumed) temporary.delete()
+                val total = connection.contentLengthLong.takeIf { it >= 0L }?.plus(resumeFrom) ?: -1L
+                connection.inputStream.use { input ->
+                    FileOutputStream(temporary, resumed).use { output ->
+                        val buffer = ByteArray(128 * 1024)
+                        var downloaded = resumeFrom
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                            downloaded += count
+                            onBytes(downloaded, total)
+                        }
+                    }
+                }
+                connection.disconnect()
+                val actual = digest(temporary, algorithm)
+                if (!actual.equals(expectedChecksum, ignoreCase = true)) {
+                    // Genuinely corrupt bytes: discard and refetch from scratch.
+                    temporary.delete()
+                    error("Downloaded file checksum did not match")
+                }
+                destination.delete()
+                check(temporary.renameTo(destination)) { "Could not finish download" }
+                return
+            } catch (t: Throwable) {
+                lastError = t
+                if (attempt < MAX_DOWNLOAD_ATTEMPTS - 1) {
+                    delay(DOWNLOAD_RETRY_BACKOFF_MS * (attempt + 1))
                 }
             }
         }
-        connection.disconnect()
-        val actual = digest(temporary, algorithm)
-        if (!actual.equals(expectedChecksum, ignoreCase = true)) {
-            temporary.delete()
-            error("Downloaded file checksum did not match")
-        }
-        destination.delete()
-        check(temporary.renameTo(destination)) { "Could not finish download" }
+        throw lastError ?: error("Download failed after $MAX_DOWNLOAD_ATTEMPTS attempts: $url")
     }
 
     private fun fetchText(url: String): String {
@@ -1562,6 +1579,10 @@ class RuntimeInstaller(private val context: Context) {
         private const val GITHUB_CLI_VERSION = "2.100.0"
         private const val GITHUB_CLI_RELEASE_URL = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz"
         private const val GITHUB_CLI_RELEASE_SHA256 = "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961"
+        // How many times a single bundle download is retried in place before the install
+        // is abandoned, and how long to back off between attempts (scaled by attempt).
+        private const val MAX_DOWNLOAD_ATTEMPTS = 5
+        private const val DOWNLOAD_RETRY_BACKOFF_MS = 1_500L
         private const val LEGACY_README = "# Pocket Dev project\n\nThis project is managed locally on Android.\n"
         private const val LEGACY_INDEX = "<!doctype html><title>Pocket Dev</title><h1>Hello from Android</h1>\n"
         private const val ROOTFS_VERSION = "ubuntu-20.04.5-arm64"
