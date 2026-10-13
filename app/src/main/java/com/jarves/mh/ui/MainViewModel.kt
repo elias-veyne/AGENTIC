@@ -415,6 +415,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var stopRequested: Boolean = false
     @Volatile private var githubAuthProcess: Process? = null
     private var githubAuthJob: kotlinx.coroutines.Job? = null
+    /**
+     * CHM — the Contextual Hierarchical Memory engine for the active chat.
+     * Per-chat so each conversation keeps its own bi-temporal memory graph.
+     * Null until a chat is active; memory is strictly opt-in per session.
+     */
+    @Volatile private var chm: com.jarves.mh.agent.memory.ChmEngine? = null
+    @Volatile private var chmCacheKey: String? = null
+    private val chmLock = Any()
+    /** Per-session assistant-text accumulators; flushed into one frame at session end. */
+    private val chmDeltaBuffers =
+        java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicReference<StringBuilder>>()
     private var activeRuntimeRequest: RuntimeRetryRequest? = null
     private val failedApiKeyIds = mutableSetOf<String>()
     /**
@@ -3523,16 +3534,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         markProjectRunning(project.id)
         markChatRunning(project.id, state.value.activeChatId)
         persistMessages()
+        // CHM — turn pipeline stage 1: the user's request becomes the pinned
+        // Mission Brief (trust 1.0, never decays). Best-effort; a memory
+        // failure must never block the send.
+        runCatching {
+            chmForChat(project.id, state.value.activeChatId).ingestMission(requestText)
+        }
         val history = state.value.messages // includes all messages up to now
-        val runtimePrompt = if (attachments.isEmpty()) requestText else buildString {
-            appendLine(requestText)
-            appendLine()
-            appendLine("<attached_files>")
-            attachments.forEach { attachment ->
-                appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+        // CHM — turn pipeline stages 2-4: retrieve (BM25 + Hebbian), compile the
+        // trust-weighted context, and run the drift watchdog. When the watchdog
+        // fires the block becomes a forced re-anchor schema instead. Prepended to
+        // the prompt so every mode (SIMPLE/AGENTIC/LONGTASK/COOPERATIVE) inherits
+        // it without touching the runtime interface.
+        val chmBlock = runCatching {
+                kotlinx.coroutines.runBlocking {
+                    chmForChat(project.id, state.value.activeChatId)
+                        .compileContext(requestText).block
+                }
+            }.getOrNull().orEmpty()
+        val runtimePrompt = if (chmBlock.isBlank()) {
+            if (attachments.isEmpty()) requestText else buildString {
+                appendLine(requestText)
+                appendLine()
+                appendLine("<attached_files>")
+                attachments.forEach { attachment ->
+                    appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+                }
+                appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
+                appendLine("</attached_files>")
             }
-            appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
-            appendLine("</attached_files>")
+        } else {
+            buildString {
+                appendLine(chmBlock)
+                appendLine()
+                if (attachments.isNotEmpty()) {
+                    appendLine("<attached_files>")
+                    attachments.forEach { attachment ->
+                        appendLine("- ${attachment.displayName}: ${projectGuestRoot(project)}/${attachment.relativePath} (${attachment.mimeType})")
+                    }
+                    appendLine("These files were explicitly attached by the user. Inspect them only as needed for the request.")
+                    appendLine("</attached_files>")
+                    appendLine()
+                }
+                appendLine("Now, respond to this new message from the user:")
+                appendLine(requestText)
+            }
         }
         failedApiKeyIds.clear()
         when (state.value.activeChatMode) {
@@ -3847,7 +3893,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun onRuntimeEvent(event: RuntimeEvent) {
-        if (event is RuntimeEvent.SessionFailed && retryWithNextApiKey(event)) return
+        // CHM: ingest tool calls and reasoning into the episodic memory graph.
+        // Best-effort by design — a memory failure must never break the chat.
+        ingestIntoMemory(event)
         // Route by owning project. A session whose project is not the visible one
         // must never touch the visible chat's state; it is buffered and written
         // through to its own transcript instead.
@@ -4215,6 +4263,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun flushBackgroundBuffer(owner: SessionOwner, chatId: String, buffer: BackgroundBuffer) {
         transcriptWrites.trySend(TranscriptWrite(owner.projectId, chatId, buffer.base + buffer.messages))
     }
+
+    /**
+     * CHM — turn pipeline stage 1 (INGEST). Normalizes a raw runtime event into
+     * a SEEM episodic frame plus a trust-graded memory node. Tool results are
+     * classified for outcome (RELEVANT/IRRELEVANT/ERROR) so the drift watchdog
+     * can later query by outcome rather than by content.
+     */
+    private fun ingestIntoMemory(event: RuntimeEvent) {
+        val owner = sessionProjects[event.sessionId] ?: return
+        val chatId = owner.chatId ?: return
+        // The memory graph is per-chat; only ingest for the chat that owns it.
+        val engine = chmForChat(owner.projectId, chatId)
+        viewModelScope.launch(Dispatchers.IO) {
+            when (event) {
+                is RuntimeEvent.ToolStarted ->
+                    engine.ingestReasoning("${event.toolName}: ${event.detail}")
+                is RuntimeEvent.ToolCompleted ->
+                    engine.ingestToolCall(
+                        tool = event.toolName,
+                        argsDigest = "",
+                        resultDigest = event.summary,
+                        provenance = emptyList(),
+                    )
+                is RuntimeEvent.ReasoningSummary ->
+                    engine.ingestReasoning(event.summary)
+                is RuntimeEvent.AssistantDelta -> {
+                    // Deltas are per-token; accumulate and emit one frame at session end.
+                    chmDeltaBuffers.computeIfAbsent(event.sessionId) {
+                        java.util.concurrent.atomic.AtomicReference(StringBuilder())
+                    }.get().append(event.text)
+                }
+                is RuntimeEvent.SessionCompleted, is RuntimeEvent.SessionStopped -> {
+                    val sb = chmDeltaBuffers.remove(event.sessionId)?.get()
+                    if (sb != null && sb.isNotBlank()) {
+                        engine.ingestReasoning(sb.toString().trim().take(CHM_MAX_REASONING_CHARS))
+                        // Turn pipeline stage 5 (POST-TURN): strengthen the Hebbian
+                        // edges between the memories this turn actually used.
+                        engine.postTurnUpdate(emptyList())
+                    }
+                }
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * CHM — resolves (and lazily creates) the memory engine for a chat. Each
+     * chat owns an isolated bi-temporal graph, so memories never leak across
+     * conversations.
+     */
+    private fun chmForChat(projectId: String, chatId: String): com.jarves.mh.agent.memory.ChmEngine {
+        val key = chmKey(projectId, chatId)
+        chm?.let { if (chmCacheKey == key) return it }
+        return synchronized(chmLock) {
+            chm?.let { if (chmCacheKey == key) return it }
+            val engine = com.jarves.mh.agent.memory.ChmEngine.forTask(getApplication(), key)
+            chm = engine
+            chmCacheKey = key
+            engine
+        }
+    }
+
+    private fun chmKey(projectId: String, chatId: String) = "${projectId}_${chatId}"
 
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value
@@ -4615,6 +4726,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Publish the drafted checklist before any work starts; this is what the
         // user asked for — the to-do appears first, then the harness works it.
         _state.update { it.copy(todoPlan = plan, liveThinking = false) }
+        // CHM: each plan item becomes a trust-0.8 PLAN_STEP memory. The Hebbian
+        // graph then learns which files each step tends to touch, and the drift
+        // watchdog can measure turns_since_plan_advance against these.
+        runCatching {
+            val engine = chmForChat(project.id, chatId)
+            plan.items.forEach { engine.ingestPlanStep(it.title) }
+        }
 
         // ---- Phase 2: drive each outstanding item to completion ------------------
         val notes = mutableListOf<String>()
@@ -4843,6 +4961,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TEST_OPENROUTER_BASE_URL = "https://openrouter.ai/api"
         private const val TEST_OPENROUTER_MODEL = "stealth/ox-alpha"
         private val TASK_TIMEOUT = java.time.Duration.ofMinutes(5)
+
+        // CHM: cap the size of an assistant-text frame so one verbose reply
+        // cannot dominate the memory graph.
+        private const val CHM_MAX_REASONING_CHARS = 1200
 
         // Mod 4: the plan-driven loop is bounded so a model that keeps discovering
         // "one more step" cannot spin forever. 16 focused steps is generous for a
