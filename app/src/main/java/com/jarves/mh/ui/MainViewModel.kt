@@ -3537,8 +3537,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // CHM — turn pipeline stage 1: the user's request becomes the pinned
         // Mission Brief (trust 1.0, never decays). Best-effort; a memory
         // failure must never block the send.
-        runCatching {
-            chmForChat(project.id, state.value.activeChatId).ingestMission(requestText)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { chmForChat(project.id, state.value.activeChatId).ingestMission(requestText) }
         }
         val history = state.value.messages // includes all messages up to now
         // CHM — turn pipeline stages 2-4: retrieve (BM25 + Hebbian), compile the
@@ -4313,7 +4313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * chat owns an isolated bi-temporal graph, so memories never leak across
      * conversations.
      */
-    private fun chmForChat(projectId: String, chatId: String): com.jarves.mh.agent.memory.ChmEngine {
+    private fun chmForChat(projectId: String, chatId: String?): com.jarves.mh.agent.memory.ChmEngine {
         val key = chmKey(projectId, chatId)
         chm?.let { if (chmCacheKey == key) return it }
         return synchronized(chmLock) {
@@ -4325,7 +4325,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun chmKey(projectId: String, chatId: String) = "${projectId}_${chatId}"
+    private fun chmKey(projectId: String, chatId: String?) = "${projectId}_${chatId ?: "default"}"
 
     private fun retryWithNextApiKey(event: RuntimeEvent.SessionFailed): Boolean {
         val current = _state.value

@@ -10,7 +10,8 @@ package com.jarves.mh.agent.memory.model
  * retrieval follow a well-worn path between memories instead of re-searching.
  */
 data class MemoryEdge(
-    val id: Long,
+    /** Assigned by the store on insert; mutable so DAOs can backfill it. */
+    var id: Long,
     val sourceId: Long,
     val targetId: Long,
     /** The relationship itself, e.g. "declared_in" or "causes". */

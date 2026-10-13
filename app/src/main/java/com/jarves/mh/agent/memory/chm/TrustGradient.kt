@@ -64,14 +64,14 @@ object TrustGradient {
 
     private fun ceilingFor(kind: MemoryKind, evidence: Evidence): Float = when (evidence) {
         // A write that compiles is the strongest possible confirmation.
-        Evidence.Compiled -> 0.98f
-        Evidence.ConfirmedBySecondRead -> 0.92f
-        Evidence.OutcomeMatched -> when (kind) {
+        is Evidence.Compiled -> 0.98f
+        is Evidence.ConfirmedBySecondRead -> 0.92f
+        is Evidence.OutcomeMatched -> when (kind) {
             MemoryKind.PLAN_STEP -> 0.95f
             else -> 0.90f
         }
         // The agent's own repetition never promotes past the inference ceiling.
-        Evidence.SelfReferenced -> 0.65f
+        is Evidence.SelfReferenced -> 0.65f
     }
 
     /** ARIADNE review bands. */

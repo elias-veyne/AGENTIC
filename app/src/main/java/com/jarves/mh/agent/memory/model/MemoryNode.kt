@@ -14,7 +14,8 @@ package com.jarves.mh.agent.memory.model
  * trust and therefore how much retrieval weight it earns. See [MemoryKind].
  */
 data class MemoryNode(
-    val id: Long,
+    /** Assigned by the store on insert; mutable so DAOs can backfill it. */
+    var id: Long,
     /** The memory content, stated as a self-contained fact. */
     val content: String,
     val kind: MemoryKind,

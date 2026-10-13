@@ -9,7 +9,8 @@ package com.jarves.mh.agent.memory.model
  * outcome != RELEVANT" surfaces rumination directly, which raw logs cannot.
  */
 data class EpisodicFrame(
-    val id: Long,
+    /** Row id, backfilled by the recorder after insert. */
+    var id: Long,
     /** Stable external id, e.g. "evt_042". */
     val frameId: String,
     val taskId: String,
