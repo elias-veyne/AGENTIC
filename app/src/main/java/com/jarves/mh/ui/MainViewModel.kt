@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.os.SystemClock
 import android.os.Build
 import android.system.Os
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
@@ -90,6 +91,9 @@ import com.jarves.mh.agent.Decomposer
 import kotlin.text.Regex
 import com.jarves.mh.agent.TaskExecutor
 import com.jarves.mh.agent.TaskStatus
+import com.jarves.mh.model.AndroidStorageRoots
+import com.jarves.mh.model.ModelPathResolver
+import com.jarves.mh.model.llama.LocalCoreHost
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -335,9 +339,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val modelRegistry = ModelRegistry(application)
     private val dshRuntime = DshRuntimeBridge(application) { profile -> vault.get(profile.kind.name) }
 
+    // On-device core. Present but inert until a GGUF is actually present on disk:
+    // LocalCoreHost.routingExecutor returns the remote executor unchanged while no
+    // model is resident, so behaviour is identical to before until one is.
+    internal val localCore = LocalCoreHost(ModelPathResolver(AndroidStorageRoots(application)))
+
     init {
         // Push any saved PAT into the runtime so agent sessions can use it.
         dshRuntime.updateGithubToken(preferences.githubPat)
+
+        // Bring the on-device core up in the background if a model is already on
+        // disk. Loading takes seconds, so it must never run inline; until it
+        // finishes, routingExecutor hands every request to the provider exactly as
+        // it did before this existed.
+        viewModelScope.launch {
+            when (val outcome = localCore.loadIfPresent(LocalCoreHost.ENTRY_MODEL_ID, ENTRY_CONTEXT_TOKENS)) {
+                is LocalCoreHost.LoadOutcome.Loaded ->
+                    Log.i(LocalCoreHost.TAG, "local core ready: ${outcome.description}")
+                is LocalCoreHost.LoadOutcome.NotInstalled ->
+                    Log.i(LocalCoreHost.TAG, "no local model on disk; routing stays remote")
+                is LocalCoreHost.LoadOutcome.Unavailable ->
+                    Log.w(LocalCoreHost.TAG, "local core unavailable: ${outcome.reason}")
+                is LocalCoreHost.LoadOutcome.Refused ->
+                    Log.w(LocalCoreHost.TAG, "local core refused: ${outcome.reason}")
+            }
+        }
     }
     private val installer = RuntimeInstaller(application)
     private val agentRegistry = AgentRegistry.builtIns(dshRuntime)
@@ -3615,8 +3641,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Real executor: each shard runs its own PRoot session concurrently (V2).
                     // The head (Agent 1) decides the work; shards alternate between Sub-Agent 1
                     // (agent2 key) and Sub-Agent 2 (agent3 key), each on its own provider.
+                    //
+                    // Wrapped by LocalCoreHost so device-bound and short requests can be
+                    // served on-device once a model is resident. While none is, this
+                    // returns `remoteExecutor` itself - unchanged behaviour.
                     val shardCounter = java.util.concurrent.atomic.AtomicInteger(0)
-                    val executor = TaskExecutor { instruction ->
+                    val remoteExecutor = TaskExecutor { instruction ->
                         val idx = shardCounter.getAndIncrement()
                         agentSystem.recordHeartbeat(AgentId.worker(if (idx % 2 == 0) "sub1" else "sub2"))
                         runRealShard(
@@ -3633,6 +3663,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             state.value.activeChatId,
                         )
                     }
+                    val executor = localCore.routingExecutor(remoteExecutor)
 
                     agentSystem.runAgentic(taskId, runtimePrompt, onOutput = { output ->
                         _state.update {
@@ -4945,6 +4976,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val MINIMUM_INITIALIZATION_SCREEN_MS = 3_000L
+
+        /**
+         * Context window reserved for the on-device core.
+         *
+         * Matches the PRD's entry tier (4K). Reserving less would make the router
+         * refuse ordinary chat on a small device; reserving more would refuse the
+         * load outright, since [com.jarves.mh.model.MemoryPlanner] budgets prompt
+         * plus output against it.
+         */
+        private const val ENTRY_CONTEXT_TOKENS = 4_096
         private const val MAX_VISIBLE_WORKSPACE_ENTRIES = 2_000
         private const val MAX_PROJECT_TERMINAL_HISTORY = 100
         private const val MAX_PROJECT_TERMINAL_OUTPUT = 200_000

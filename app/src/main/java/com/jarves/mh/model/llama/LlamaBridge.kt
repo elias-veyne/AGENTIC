@@ -290,6 +290,20 @@ class LlamaBridge(
     /** Bytes of the currently loaded weight file, for telemetry. */
     val residentWeightBytes: Long get() = loadedWeightBytes
 
+    /**
+     * The loaded model's own description, as reported by llama.cpp.
+     *
+     * Empty when nothing is resident. Useful in a bug report because it identifies the
+     * architecture and quantisation actually loaded, which is not always the quantisation
+     * the filename implies.
+     */
+    val modelDescription: String
+        get() {
+            val current = handle
+            if (current == 0L) return ""
+            return runCatching { LlamaNative.nativeModelDescription(current) }.getOrDefault("")
+        }
+
     private fun requireAvailable() {
         if (!LlamaNative.isLibraryLoaded) {
             throw LocalModelUnavailableException("libagentic-llama.so is not available in this build")
