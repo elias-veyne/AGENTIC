@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(mobile_harness_native C ASM)
+
+# CXX is required by the vendored llama.cpp runtime added in the Local Core work.
+# Everything else in this file is C and freestanding assembly, so CXX was absent
+# until now and enabling it here is the only change the rest of the build needs.
+project(mobile_harness_native C CXX ASM)
 
 if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
     message(FATAL_ERROR "Agentic currently supports only arm64-v8a")
@@ -130,6 +134,36 @@ add_custom_command(TARGET prootloader-carrier POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:prootloader>" "$<TARGET_FILE:prootloader-carrier>"
 )
 
-foreach(target pocketspawn talloc android-shmem proot proot-carrier prootloader-carrier)
+# ---------------------------------------------------------------------------
+# llama.cpp: on-device GGUF inference, pinned by git submodule to v0.7.0.
+#
+# Consumed as a subdirectory rather than a prebuilt .so so the runtime is built
+# from source against this exact NDK. The LLAMA_BUILD_* switches below all
+# default to ${LLAMA_STANDALONE}, which is already OFF here, but they are set
+# explicitly so that a future bump cannot quietly start compiling llama.cpp's
+# 75 MB of test models, server and example binaries into an APK.
+# ---------------------------------------------------------------------------
+set(LLAMA_BUILD_COMMON    OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TESTS     OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS     OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER    OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_APP       OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_MTMD      OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_HTML      OFF CACHE BOOL "" FORCE)
+
+# -march=native is invalid when cross-compiling for aarch64: the host CPU says
+# nothing about the phone. Without this the build either fails or, worse, emits
+# instructions the device cannot execute.
+set(GGML_NATIVE           OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP           OFF CACHE BOOL "" FORCE)
+
+add_subdirectory("${PROJECT_ROOT}/third_party/llama.cpp" "${CMAKE_CURRENT_BINARY_DIR}/llama.cpp")
+
+add_library(agentic-llama SHARED llama_jni.cpp)
+target_include_directories(agentic-llama PRIVATE "${PROJECT_ROOT}/third_party/llama.cpp/include")
+target_link_libraries(agentic-llama PRIVATE llama log android)
+
+foreach(target pocketspawn talloc android-shmem proot proot-carrier prootloader-carrier agentic-llama)
     target_link_options(${target} PRIVATE "-Wl,-z,max-page-size=16384")
 endforeach()
