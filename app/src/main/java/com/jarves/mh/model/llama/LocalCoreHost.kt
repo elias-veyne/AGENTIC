@@ -31,6 +31,16 @@ import java.io.File
  */
 class LocalCoreHost(
     private val resolver: ModelPathResolver,
+    /**
+     * Bytes of device memory currently available, for the load projection.
+     *
+     * Must be supplied from [com.jarves.mh.model.AndroidStorageRoots.availableMemoryBytes]
+     * in production. The default is deliberately non-refusing: the previous default,
+     * `Runtime.maxMemory()`, is the Android *heap* ceiling (128-512 MB on most
+     * devices) rather than device RAM, so every model was refused on every phone.
+     * Unknown memory should admit the load, not block it.
+     */
+    private val availableRam: () -> Long = { Long.MAX_VALUE },
     private val planner: com.jarves.mh.model.MemoryPlanner = com.jarves.mh.model.MemoryPlanner(),
     /**
      * Run one benchmark immediately after the first successful load and log it.
@@ -56,7 +66,7 @@ class LocalCoreHost(
         data class Refused(val reason: String) : LoadOutcome
     }
 
-    private val bridge: LlamaBridge by lazy { LlamaBridge(resolver, planner) }
+    private val bridge: LlamaBridge by lazy { LlamaBridge(resolver, planner, availableRam = availableRam) }
 
     /** Whether the native runtime exists in this build. */
     val isRuntimeAvailable: Boolean get() = bridge.isAvailable
@@ -68,7 +78,7 @@ class LocalCoreHost(
     val backendInfo: String get() = LlamaBridge.backendInfo()
 
     /**
-     * Locate a GGUF already present on disk.
+     * Locate the main GGUF already present on disk.
      *
      * The PRD's Model Manager and download manager are not built yet, so there is
      * nothing here that *puts* a model on the device. Until that lands, this is how a
@@ -76,12 +86,22 @@ class LocalCoreHost(
      * [ModelPathResolver.modelsDir] resolves to, which is
      * `Android/data/<pkg>/files/models/<modelId>/`.
      *
+     * Auxiliary files must be excluded explicitly. A MiniCPM-V 4.7 directory holds
+     * the 639 MB quantised model, a 1.1 GB `mmproj` vision projector and a 133 MB
+     * `dspark` draft head side by side, and "smallest file wins" would pick the draft
+     * head and then fail to load it as the main model. Choosing by size alone was the
+     * bug; the auxiliary prefixes are now skipped by name.
+     *
      * @param modelId directory name to look under, e.g. `minicpm-v-4_7`.
-     * @return the first `.gguf` found, or null.
+     * @return the smallest *primary* GGUF found, or null.
      */
     fun discoverWeightFile(modelId: String): File? =
         resolver.modelDir(modelId)
-            .listFiles { f -> f.isFile && f.name.endsWith(".gguf", ignoreCase = true) }
+            .listFiles { f ->
+                f.isFile &&
+                    f.name.endsWith(".gguf", ignoreCase = true) &&
+                    AUXILIARY_PREFIXES.none { f.name.startsWith(it, ignoreCase = true) }
+            }
             ?.sortedBy { it.length() }
             ?.firstOrNull()
 
@@ -91,7 +111,7 @@ class LocalCoreHost(
      * Idempotent: a second call with a model already resident returns the same
      * [LoadOutcome.Loaded] without re-reading the file.
      */
-    suspend fun loadIfPresent(modelId: String, contextTokens: Int): LoadOutcome {
+    suspend fun loadIfPresent(modelId: String, contextTokens: Int, force: Boolean = false): LoadOutcome {
         if (bridge.isReady) {
             return LoadOutcome.Loaded(bridge.modelId, bridge.modelId, 0L)
         }
@@ -104,7 +124,15 @@ class LocalCoreHost(
 
         val started = System.currentTimeMillis()
         return try {
-            bridge.load(weights, modelId, contextTokens)
+            if (force) {
+                // Bypass the projection entirely. The guard is arithmetic on an
+                // estimated per-token KV cost, so it can be wrong in both directions;
+                // a device that demonstrably has the headroom should not be stuck
+                // behind a bad constant. Only reachable from an explicit caller.
+                bridge.load(weights, modelId, contextTokens, enforceMemoryGuard = false)
+            } else {
+                bridge.load(weights, modelId, contextTokens)
+            }
             val took = System.currentTimeMillis() - started
             log("loaded $modelId in ${took}ms, ctx=$contextTokens")
             if (autoBenchmark) {
@@ -192,5 +220,14 @@ class LocalCoreHost(
          * a GGUF into when testing by hand.
          */
         const val ENTRY_MODEL_ID = "minicpm-v-4_7"
+
+        /**
+         * Filename prefixes for GGUF files that are *not* the primary language model.
+         *
+         * `mmproj` is the vision projector and `dspark` is a speculative-decoding draft
+         * head; both are shipped alongside the main quantisation and neither can be
+         * loaded as a model in its own right.
+         */
+        private val AUXILIARY_PREFIXES = listOf("mmproj", "dspark", "vision", "projector", "lora")
     }
 }

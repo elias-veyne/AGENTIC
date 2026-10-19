@@ -99,7 +99,7 @@ class LocalCoreHostTest {
     }
 
     @Test
-    fun `discovery prefers the smallest gguf when several are present`() {
+    fun `discovery prefers the smallest primary gguf when several are present`() {
         // A quantised and a full-precision copy in the same directory would otherwise
         // be an arbitrary choice; smaller is the one that fits the entry tier.
         val dir = resolver.modelDir("m")
@@ -108,6 +108,40 @@ class LocalCoreHostTest {
         dir.resolve("m_IQ4_XS.gguf").writeBytes(ByteArray(512))
 
         assertEquals("m_IQ4_XS.gguf", host().discoverWeightFile("m")?.name)
+    }
+
+    @Test
+    fun `discovery skips the vision projector`() {
+        // A real MiniCPM-V 4.7 directory holds the 639 MB model next to a 1.1 GB
+        // mmproj. Both end in .gguf and only one of them is a language model.
+        val dir = resolver.modelDir("m")
+        dir.mkdirs()
+        dir.resolve("mmproj-model-f16.gguf").writeBytes(ByteArray(9_000))
+        dir.resolve("m_IQ4_XS.gguf").writeBytes(ByteArray(639))
+
+        assertEquals("m_IQ4_XS.gguf", host().discoverWeightFile("m")?.name)
+    }
+
+    @Test
+    fun `discovery skips the speculative draft head even though it is far smaller`() {
+        // This is the regression that motivated the exclusion: dspark weights are
+        // 133 MB against the main model's 639 MB, so "smallest wins" would have picked
+        // the draft head and then failed to load it as the model.
+        val dir = resolver.modelDir("m")
+        dir.mkdirs()
+        dir.resolve("dspark-m-Q4_K_M.gguf").writeBytes(ByteArray(133))
+        dir.resolve("m_IQ4_XS.gguf").writeBytes(ByteArray(639))
+
+        assertEquals("m_IQ4_XS.gguf", host().discoverWeightFile("m")?.name)
+    }
+
+    @Test
+    fun `discovery returns nothing when only auxiliary files are present`() {
+        val dir = resolver.modelDir("m")
+        dir.mkdirs()
+        dir.resolve("mmproj-model-f16.gguf").writeBytes(ByteArray(512))
+
+        assertEquals(null, host().discoverWeightFile("m"))
     }
 
     // --- load outcomes -------------------------------------------------------

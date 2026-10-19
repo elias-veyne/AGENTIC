@@ -342,7 +342,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // On-device core. Present but inert until a GGUF is actually present on disk:
     // LocalCoreHost.routingExecutor returns the remote executor unchanged while no
     // model is resident, so behaviour is identical to before until one is.
-    internal val localCore = LocalCoreHost(ModelPathResolver(AndroidStorageRoots(application)))
+    internal val localCore: LocalCoreHost = run {
+        val roots = AndroidStorageRoots(application)
+        // availableMemoryBytes() rather than Runtime.maxMemory(): the latter is the
+        // Android heap ceiling (128-512 MB), so the planner would refuse every model
+        // on every device.
+        LocalCoreHost(
+            resolver = ModelPathResolver(roots),
+            availableRam = { roots.availableMemoryBytes() },
+        )
+    }
 
     init {
         // Push any saved PAT into the runtime so agent sessions can use it.

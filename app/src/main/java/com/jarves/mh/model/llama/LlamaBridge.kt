@@ -1,5 +1,7 @@
 package com.jarves.mh.model.llama
 
+import android.util.Log
+
 import com.jarves.mh.agent.LocalInferenceBackend
 import com.jarves.mh.agent.LocalModelUnavailableException
 import com.jarves.mh.model.ManifestEntry
@@ -142,7 +144,19 @@ class LlamaBridge(
      * @throws LocalModelUnavailableException when the library is missing, the file is
      *   absent, the digest does not match, or the projection exceeds free memory.
      */
-    suspend fun load(weightFile: File, modelId: String, contextTokens: Int) = withContext(Dispatchers.IO) {
+    suspend fun load(
+        weightFile: File,
+        modelId: String,
+        contextTokens: Int,
+        /**
+         * Apply the [MemoryPlanner] projection before loading.
+         *
+         * On by default. Turn it off only when the caller has a better figure than
+         * the planner - the projection is arithmetic on an *estimated* per-token KV
+         * cost, so it is only as accurate as that constant.
+         */
+        enforceMemoryGuard: Boolean = true,
+    ) = withContext(Dispatchers.IO) {
         requireAvailable()
         if (handle != 0L) release()
 
@@ -156,17 +170,21 @@ class LlamaBridge(
         // The projection deliberately does not add the draft head here. Speculative
         // decoding is Phase 2; budgeting for it now would refuse loads that fit.
         val projected = planner.projectedRss(bytes, contextTokens, kvBytesPerToken)
-        planner.refusalOrNull(
-            availableRamBytes = availableRam(),
-            weightBytes = bytes,
-            contextTokens = contextTokens,
-            kvBytesPerToken = kvBytesPerToken,
-        )?.let { refusal ->
-            throw LocalModelUnavailableException(
-                "load refused: needs about ${refusal.projectedBytes} B, " +
-                    "only ${refusal.availableRamBytes} B available; " +
-                    "try the ${refusal.suggested.tier} profile",
-            )
+        if (enforceMemoryGuard) {
+            planner.refusalOrNull(
+                availableRamBytes = availableRam(),
+                weightBytes = bytes,
+                contextTokens = contextTokens,
+                kvBytesPerToken = kvBytesPerToken,
+            )?.let { refusal ->
+                throw LocalModelUnavailableException(
+                    "load refused: needs about ${refusal.projectedBytes} B, " +
+                        "only ${refusal.availableRamBytes} B available; " +
+                        "try the ${refusal.suggested.tier} profile",
+                )
+            }
+        } else {
+            logLine("memory guard bypassed; projected ${projected} B with ${availableRam()} B available")
         }
         check(projected > 0) { "projection must be positive" }
 
@@ -285,6 +303,15 @@ class LlamaBridge(
         loadedModelId = ""
         loadedWeightBytes = 0
         runCatching { LlamaNative.nativeFreeModel(current) }
+            .onFailure { logLine("native free failed: ${it.message}") }
+    }
+
+    /**
+     * Diagnostics sink. Routed through the host's logger when one is attached, so a
+     * bypassed memory guard is visible in the same logcat stream as the benchmark.
+     */
+    private fun logLine(message: String) {
+        Log.i(LocalCoreHost.TAG, message)
     }
 
     /** Bytes of the currently loaded weight file, for telemetry. */
