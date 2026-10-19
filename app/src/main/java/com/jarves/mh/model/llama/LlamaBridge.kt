@@ -9,6 +9,7 @@ import com.jarves.mh.model.MemoryPlanner
 import com.jarves.mh.model.ModelPathResolver
 import com.jarves.mh.model.VerificationOutcome
 import com.jarves.mh.model.ChecksumVerifier
+import com.jarves.mh.model.GgufReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -89,14 +90,14 @@ class LlamaBridge(
     private val planner: MemoryPlanner = MemoryPlanner(),
     private val verifier: ChecksumVerifier = ChecksumVerifier(),
     /**
-     * Bytes of KV cache per context token.
+     * Bytes of KV cache per context token, used **only** when the GGUF header cannot
+     * be read.
      *
-     * Needed by [MemoryPlanner] to project peak RSS, and not derivable from the file
-     * name: it depends on the checkpoint's layer count, KV head count and head
-     * dimension. 64 KiB per token is a deliberately conservative figure for a ~1B f16
-     * model (2 x layers x kv-heads x head-dim x 2 bytes). It should be replaced with
-     * the real figure once a checkpoint is on hand - the planner is only as good as
-     * this number, and over-estimating costs a little headroom rather than an OOM kill.
+     * 64 KiB is deliberately pessimistic: an unreadable header means the model shape is
+     * unknown, and over-reserving is the safe direction. When the header *is* readable
+     * this is ignored in favour of the measured value from [GgufReader] - for
+     * MiniCPM-V-4.7-1B the measurement is far lower, because all 24 layers are
+     * recurrent and consume no KV cache at all.
      */
     private val kvBytesPerToken: Long = DEFAULT_KV_BYTES_PER_TOKEN,
     /**
@@ -167,15 +168,31 @@ class LlamaBridge(
         val bytes = weightFile.length()
         verify(weightFile, bytes)
 
+        // Measured, not assumed. The header read costs a few megabytes of I/O and
+        // replaces a constant that was 2.7x too high for this checkpoint - which
+        // presented as "this phone cannot run it" rather than as a wrong number.
+        val architecture = GgufReader.readArchitecture(weightFile)
+        val kvPerToken = architecture?.kvBytesPerToken
+        if (architecture != null) {
+            logLine(
+                "arch=${architecture.architecture} layers=${architecture.blockCount} " +
+                    "attnLayers=${architecture.attentionLayerCount} recurrent=${architecture.recurrentLayers.size} " +
+                    "kvBytes/token=${architecture.kvBytesPerToken}"
+            )
+        } else {
+            logLine("could not read GGUF metadata; falling back to the conservative KV estimate")
+        }
+        val effectiveKvPerToken = kvPerToken ?: kvBytesPerToken
+
         // The projection deliberately does not add the draft head here. Speculative
         // decoding is Phase 2; budgeting for it now would refuse loads that fit.
-        val projected = planner.projectedRss(bytes, contextTokens, kvBytesPerToken)
+        val projected = planner.projectedRss(bytes, contextTokens, effectiveKvPerToken)
         if (enforceMemoryGuard) {
             planner.refusalOrNull(
                 availableRamBytes = availableRam(),
                 weightBytes = bytes,
                 contextTokens = contextTokens,
-                kvBytesPerToken = kvBytesPerToken,
+                kvBytesPerToken = effectiveKvPerToken,
             )?.let { refusal ->
                 throw LocalModelUnavailableException(
                     "load refused: needs about ${refusal.projectedBytes} B, " +
@@ -338,7 +355,11 @@ class LlamaBridge(
     }
 
     companion object {
-        /** See [kvBytesPerToken] for the derivation and its conservatism. */
+        /**
+         * Fallback KV estimate, used only when [GgufReader] cannot read the header.
+         *
+         * Measured values take precedence; see [kvBytesPerToken].
+         */
         const val DEFAULT_KV_BYTES_PER_TOKEN = 64L * 1024L
 
         /**
