@@ -92,12 +92,51 @@ import kotlin.text.Regex
 import com.jarves.mh.agent.TaskExecutor
 import com.jarves.mh.agent.TaskStatus
 import com.jarves.mh.model.AndroidStorageRoots
+import com.jarves.mh.model.DownloadState
 import com.jarves.mh.model.ModelPathResolver
+import com.jarves.mh.model.download.ModelCatalog
+import com.jarves.mh.model.download.ModelDownloadManager
 import com.jarves.mh.model.llama.LocalCoreHost
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import org.json.JSONArray
 import org.json.JSONObject
 
 enum class StartupStage { CHECKING, SETUP_REQUIRED, INSTALLING, MODEL_SETUP, INITIALIZING, READY, ERROR }
+
+/**
+ * Lifecycle of the on-device model, shown as its own surface.
+ *
+ * Kept apart from [StartupStage] on purpose. A first-launch model download is minutes
+ * of mobile data; folding it into the startup gate would make the whole app
+ * unopenable until it finished, and would re-block every launch afterwards if the
+ * model were ever removed.
+ */
+enum class LocalModelStage {
+    /** Nothing has been attempted yet. */
+    IDLE,
+
+    /** Fetching bytes. */
+    DOWNLOADING,
+
+    /** Digesting the assembled file. */
+    VERIFYING,
+
+    /** Verified, moving into the models directory. */
+    INSTALLING,
+
+    /** Loading into llama.cpp. Takes seconds. */
+    LOADING,
+
+    /** Resident and measured. */
+    READY,
+
+    /** Stopped, and retryable. */
+    FAILED,
+
+    /** The user dismissed the card. Not retried automatically. */
+    DISMISSED,
+}
 
 enum class ApiPingStatus { IDLE, PINGING, OK, FAILED }
 enum class AppUpdateStatus { AVAILABLE, PERMISSION_REQUIRED, DOWNLOADING, INSTALLING, ERROR }
@@ -161,6 +200,19 @@ data class AppUiState(
     val startupErrorIsOffline: Boolean = false,
     val showDetailedSetupProgress: Boolean = false,
     val onboardingComplete: Boolean = false,
+    /**
+     * On-device model provisioning.
+     *
+     * Deliberately separate from [startupStage]: a 639 MB download must never gate the
+     * app. The user can work, and routing simply stays remote until this completes.
+     */
+    val localModelStage: LocalModelStage = LocalModelStage.IDLE,
+    val localModelProgress: Float = 0f,
+    val localModelMessage: String = "",
+    val localModelBytes: Pair<Long, Long>? = null,
+    /** Populated once the model is resident and benchmarked. */
+    val localModelBenchmark: String? = null,
+    val localModelError: String? = null,
     val backgroundSetupComplete: Boolean = false,
     val provider: ProviderProfile = ProviderProfile(ProviderKind.ANTHROPIC),
     val activeApiKeyName: String? = null,
@@ -361,16 +413,122 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // disk. Loading takes seconds, so it must never run inline; until it
         // finishes, routingExecutor hands every request to the provider exactly as
         // it did before this existed.
+        // Adopt an already-installed model, then provision one if there is none.
+        // Never inline: loading takes seconds, and the app must open regardless.
         viewModelScope.launch {
-            when (val outcome = localCore.loadIfPresent(LocalCoreHost.ENTRY_MODEL_ID, ENTRY_CONTEXT_TOKENS)) {
-                is LocalCoreHost.LoadOutcome.Loaded ->
-                    Log.i(LocalCoreHost.TAG, "local core ready: ${outcome.description}")
+            adoptExistingLocalModel()
+            if (!localCore.isModelResident) ensureLocalModelReady()
+        }
+    }
+
+    private var localModelJob: Job? = null
+
+    /**
+     * Provision the on-device model: download, verify, load, benchmark.
+     *
+     * Auto-triggered on first launch and safe to call again. Nothing here gates the
+     * app - a 639 MB download must not make it unopenable - and a failure only leaves
+     * routing where it already was, on the remote provider.
+     *
+     * The benchmark runs in-app and lands in [AppUiState.localModelBenchmark], so the
+     * PRD's latency targets can be read on the device instead of scraped from a
+     * terminal.
+     */
+    fun ensureLocalModelReady() {
+        if (localModelJob?.isActive == true) return
+        localModelJob = viewModelScope.launch {
+            val spec = ModelCatalog.entryTier
+            val downloader = ModelDownloadManager(ModelPathResolver(AndroidStorageRoots(getApplication())))
+
+            if (!downloader.isInstalled(spec)) {
+                setLocalModel(LocalModelStage.DOWNLOADING, 0f, "Starting download…", null)
+                try {
+                    downloader.download(spec).collect { p ->
+                        val stage = when (p.state) {
+                            DownloadState.DOWNLOADING -> LocalModelStage.DOWNLOADING
+                            DownloadState.VERIFYING -> LocalModelStage.VERIFYING
+                            DownloadState.MOVING -> LocalModelStage.INSTALLING
+                            else -> LocalModelStage.DOWNLOADING
+                        }
+                        setLocalModel(stage, p.fraction, p.message, p.downloadedBytes to p.totalBytes)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    setLocalModelFailed("Download failed: ${e.message}")
+                    return@launch
+                }
+            }
+
+            // --- load and measure ------------------------------------------------
+            setLocalModel(LocalModelStage.LOADING, 1f, "Loading model into memory…", null)
+            when (val outcome = localCore.loadIfPresent(spec.id, ENTRY_CONTEXT_TOKENS)) {
+                is LocalCoreHost.LoadOutcome.Loaded -> {
+                    setLocalModel(LocalModelStage.READY, 1f, "On-device model ready", null)
+                    runCatching { localCore.benchmark(maxTokens = 32, repeat = 1) }
+                        .onSuccess { results ->
+                            results.firstOrNull()?.let { r ->
+                                _state.update {
+                                    it.copy(
+                                        localModelBenchmark =
+                                            "First token ${r.timeToFirstTokenMs} ms · " +
+                                                "${"%.1f".format(r.tokensPerSecond)} tok/s · " +
+                                                "${r.tokensGenerated} tokens",
+                                    )
+                                }
+                            }
+                        }
+                        .onFailure { Log.w(LocalCoreHost.TAG, "benchmark failed: ${it.message}") }
+                }
                 is LocalCoreHost.LoadOutcome.NotInstalled ->
-                    Log.i(LocalCoreHost.TAG, "no local model on disk; routing stays remote")
-                is LocalCoreHost.LoadOutcome.Unavailable ->
-                    Log.w(LocalCoreHost.TAG, "local core unavailable: ${outcome.reason}")
-                is LocalCoreHost.LoadOutcome.Refused ->
-                    Log.w(LocalCoreHost.TAG, "local core refused: ${outcome.reason}")
+                    setLocalModelFailed("Model file missing after download")
+                is LocalCoreHost.LoadOutcome.Unavailable -> setLocalModelFailed(outcome.reason)
+                is LocalCoreHost.LoadOutcome.Refused -> setLocalModelFailed(outcome.reason)
+            }
+        }
+    }
+
+    /** Retry after a failure. */
+    fun retryLocalModel() {
+        _state.update { it.copy(localModelError = null, localModelStage = LocalModelStage.IDLE) }
+        ensureLocalModelReady()
+    }
+
+    /** Hide the card. Does not cancel an in-flight download. */
+    fun dismissLocalModelCard() {
+        _state.update { it.copy(localModelStage = LocalModelStage.DISMISSED) }
+    }
+
+    private fun setLocalModel(stage: LocalModelStage, fraction: Float, message: String, bytes: Pair<Long, Long>?) {
+        _state.update {
+            it.copy(
+                localModelStage = stage,
+                localModelProgress = fraction.coerceIn(0f, 1f),
+                localModelMessage = message,
+                localModelBytes = bytes,
+                localModelError = null,
+            )
+        }
+    }
+
+    private fun setLocalModelFailed(reason: String) {
+        Log.w(LocalCoreHost.TAG, "local model: $reason")
+        _state.update {
+            it.copy(localModelStage = LocalModelStage.FAILED, localModelMessage = reason, localModelError = reason)
+        }
+    }
+
+    /** Load an already-installed model without downloading anything. */
+    private suspend fun adoptExistingLocalModel() {
+        if (localCore.loadIfPresent(LocalCoreHost.ENTRY_MODEL_ID, ENTRY_CONTEXT_TOKENS)
+                is LocalCoreHost.LoadOutcome.Loaded
+        ) {
+            _state.update {
+                it.copy(
+                    localModelStage = LocalModelStage.READY,
+                    localModelProgress = 1f,
+                    localModelMessage = "On-device model ready",
+                )
             }
         }
     }

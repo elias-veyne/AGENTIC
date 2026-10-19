@@ -289,6 +289,13 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
             viewModel.consumeToast()
         }
     }
+    // Auto-trigger provisioning once the app has a content host. Never inline and
+    // never a gate: 639 MB of mobile data must not make the app unopenable.
+    LaunchedEffect(Unit) { viewModel.ensureLocalModelReady() }
+
+    // Rendered above whatever the startup chain below decides to show, so a model
+    // download started during onboarding is still visible.
+    Box(Modifier.fillMaxSize()) {
     when {
         state.startupStage == StartupStage.CHECKING -> StartupLoadingScreen(
             state = state,
@@ -399,6 +406,27 @@ fun PocketDevApp(viewModel: MainViewModel = viewModel()) {
                 onSetupComplete = viewModel::finishOnboardingWithoutKey,
             )
         else -> RootScreenHost(state, viewModel, projectsListState)
+    }
+
+        // Overlay: only occupies the corner it is given, so it never intercepts
+        // touches meant for the screen underneath.
+        if (state.localModelStage != LocalModelStage.IDLE &&
+            state.localModelStage != LocalModelStage.DISMISSED
+        ) {
+            Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.TopEnd) {
+                LocalModelStatusCard(
+                    stage = state.localModelStage,
+                    progress = state.localModelProgress,
+                    message = state.localModelMessage,
+                    bytes = state.localModelBytes,
+                    benchmark = state.localModelBenchmark,
+                    error = state.localModelError,
+                    onRetry = viewModel::retryLocalModel,
+                    onDismiss = viewModel::dismissLocalModelCard,
+                    modifier = Modifier.widthIn(max = 380.dp),
+                )
+            }
+        }
     }
 }
 
